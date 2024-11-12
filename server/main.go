@@ -50,7 +50,6 @@ func main() {
 		//fmt.Println("New Connection ", s.Request.RemoteAddr)
 		hub.SessionMap.Store(s, &SessionInfo{
 			Hub:     hub,
-			Room:    nil,
 			Session: s,
 		})
 	})

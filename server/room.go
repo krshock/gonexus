@@ -40,7 +40,7 @@ type RoomRequest struct {
 
 func (room *Room) RoomGorroutine() {
 	fmt.Println("New room gorroutine ", room.Name)
-	defer fmt.Println("Exiting room goroutine2 ", room.Name)
+	defer fmt.Println("Exiting room goroutine ", room.Name)
 
 	room.Open = true
 	for {
@@ -50,7 +50,6 @@ func (room *Room) RoomGorroutine() {
 		case cmd_ch := <-room.CmdChan:
 			if cmd_ch.Id == ROOM_CHAN_CMD_USER_LEAVE {
 				if cmd_ch.Session.Room.UserLeave(cmd_ch.Session, false) {
-					fmt.Println("Exiting room goroutine3 ", room.Name)
 					return
 				}
 			} else if cmd_ch.Id == ROOM_CHAN_CMD_USER_JOIN {
@@ -106,10 +105,11 @@ func (room *Room) UserLeave(s *SessionInfo, close_conn bool) bool {
 	} else {
 		s.Session.Write(buildMsgPacket(2, 0, "No hay juego activo"))
 	}
-	return false
+	return true
 }
 
 func (room *Room) CloseRoom(close_clients bool) {
+	fmt.Println("room.CloseRoom ", room.Name)
 	room.Open = false
 	room.Hub.RoomMap.Delete(room.Name)
 	for idx, p := range room.Peers {
@@ -124,14 +124,16 @@ func (room *Room) CloseRoom(close_clients bool) {
 		}
 	}
 
-	room.Hub.CmdChan <- HubChanCmd{Id: HUB_CHAN_CMD_ROOM_UNREGISTER}
+	room.Hub.CmdChan <- HubChanCmd{Id: HUB_CHAN_CMD_ROOM_UNREGISTER, Room: room}
 }
 
-func (room *Room) HandlePacket(sessionI *SessionInfo, msg []byte) {
+func (room *Room) HandlePacket(sessionI *SessionInfo, msg []byte) bool {
 	if len(msg) == 1 && msg[0] == 2 {
-		room.UserLeave(sessionI, false)
-		return
+		//room.UserLeave(sessionI, false)
+		room.CmdChan <- RoomChanCmd{Id: ROOM_CHAN_CMD_USER_LEAVE, Session: sessionI}
+		return true
 	}
 	fmt.Println("Invalid room packet, ", sessionI.Session.RemoteAddr())
 	fmt.Println(msg)
+	return false
 }

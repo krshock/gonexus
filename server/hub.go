@@ -67,13 +67,18 @@ func (hub *Hub) JoinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 	}
 	room := value.(*Room)
 
+	if !room.AllowJoin {
+		session.Session.Write(buildMsgPacket(111, 0, "No se aceptan nuevos jugadores:"+roomReq.RoomId))
+		return false
+	}
+
 	if room.Secret != roomReq.RoomSecret {
 		session.Session.Write(buildMsgPacket(2, 0, "Juego no encontrado(Contraseña inválida):"+roomReq.RoomId))
 		return false
 	}
 
 	if !room.Open {
-		session.Session.Write(buildMsgPacket(2, 2, "Juego se encuentra cerrado:"+roomReq.RoomId))
+		session.Session.Write(buildMsgPacket(2, 1, "Juego se encuentra cerrado:"+roomReq.RoomId))
 		return false
 	}
 
@@ -87,7 +92,11 @@ func (hub *Hub) JoinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 }
 
 func (hub *Hub) CreateRoom(session *SessionInfo, name string, secret string) *Room {
-
+	_r, _ := hub.RoomMap.Load(name)
+	if _r != nil {
+		session.Session.Write(buildMsgPacket(2, 2, "Juego Ya Creado:"+name))
+		return nil
+	}
 	new_room := &Room{
 		Name:           name,
 		Secret:         secret,
@@ -115,6 +124,7 @@ func (hub *Hub) CreateRoom(session *SessionInfo, name string, secret string) *Ro
 		return nil
 	}
 	session.Room = new_room
+	session.IsHost = true
 	hub.RoomMap.Store(name, new_room)
 	fmt.Println("Room created: name=", new_room.Name, " secret=", new_room.Secret)
 	go new_room.RoomGorroutine()

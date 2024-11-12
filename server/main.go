@@ -8,9 +8,11 @@ import (
 )
 
 type SessionInfo struct {
-	Hub     *Hub
-	Room    *Room
 	Session *melody.Session
+	Room    *Room
+	Hub     *Hub
+	Name    string
+	IsHost  bool
 }
 
 type UserPacket struct {
@@ -19,7 +21,6 @@ type UserPacket struct {
 }
 
 func buildMsgPacket(subcmd uint8, msgid uint8, msg string) []byte {
-	fmt.Sprintln(msg)
 	var b = []byte{0, 0, 0}
 	b[0] = 2
 	b[1] = subcmd
@@ -27,6 +28,16 @@ func buildMsgPacket(subcmd uint8, msgid uint8, msg string) []byte {
 	if msg != "" {
 		strb := []byte(msg)
 		b = append(b, strb...)
+	}
+	return b
+}
+
+func buildPLayerPacket(pid uint8, state uint8, name string) []byte {
+	var b = []byte{1, 3, 0, 0}
+	b[2] = pid
+	b[3] = state
+	if name != "" {
+		b = append(b, []byte(name)...)
 	}
 	return b
 }

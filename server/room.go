@@ -13,7 +13,7 @@ const (
 )
 
 const (
-	ROOM_CMD_PEER_PACKET = iota
+	ROOM_CMD_PEER_PACKET_SEND = iota
 	ROOM_CMD_LEAVE_ROOM
 	ROOM_CMD_TOOGLE_JOIN
 )
@@ -110,11 +110,11 @@ func (room *Room) GetSessionByPlayername(name string) *SessionInfo {
 
 func (room *Room) UserJoin(s *SessionInfo, r *RoomRequest) {
 	added := false
-	pidx := 0
+	peer_id := 0
 	for idx := range room.Peers {
 		if room.Peers[idx] == nil {
 			room.Peers[idx] = s
-			pidx = idx
+			peer_id = idx
 			added = true
 			break
 		}
@@ -122,8 +122,9 @@ func (room *Room) UserJoin(s *SessionInfo, r *RoomRequest) {
 
 	if added {
 		s.Room = room
+		s.PeerId = peer_id
 		s.Session.Write(buildMsgPacket(0, 0, "Ingresando a Juego:"+r.RoomId)) //Room Joined
-		room.SendPacket(255, 255, buildPLayerPacket(uint8(pidx), 1, "Player"))
+		room.SendPacket(255, 255, buildPLayerPacket(uint8(peer_id), 1, "Player"))
 	} else {
 		s.Session.Write(buildMsgPacket(2, 0, "Juego no encontrado:"+r.RoomId)) //Room Joined
 	}
@@ -176,7 +177,18 @@ func (room *Room) CloseRoom(close_clients bool) {
 }
 
 func (room *Room) HandlePacket(sessionI *SessionInfo, msg []byte) {
-	if len(msg) == 1 && msg[0] == ROOM_CMD_LEAVE_ROOM {
+	if len(msg) > 4 && msg[0] == ROOM_CMD_PEER_PACKET_SEND {
+		if !sessionI.IsHost {
+			msg[2] = byte(sessionI.PeerId)
+			if msg[3] != 0 {
+				fmt.Println("Non host sending to invalid destinaition ", msg[3])
+				return
+			}
+		} else if msg[2] != 255 { //host cant send 255 as origin peer
+
+		}
+
+	} else if len(msg) == 1 && msg[0] == ROOM_CMD_LEAVE_ROOM {
 		//room.UserLeave(sessionI, false)
 		room.CmdChan <- RoomChanCmd{Id: ROOM_CHAN_CMD_USER_LEAVE, Session: sessionI}
 		return

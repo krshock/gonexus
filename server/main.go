@@ -8,6 +8,7 @@ import (
 )
 
 type SessionInfo struct {
+	PeerId  int
 	Session *melody.Session
 	Room    *Room
 	Hub     *Hub

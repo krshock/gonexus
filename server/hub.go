@@ -112,9 +112,11 @@ func (hub *Hub) CreateRoom(session *SessionInfo, name string, secret string) *Ro
 	hub.Mut.Lock()
 	defer hub.Mut.Unlock()
 	added := false
+	peer_id := 0
 	for idx := range hub.Rooms {
 		if hub.Rooms[idx] == nil {
 			hub.Rooms[idx] = new_room
+			peer_id = idx
 			added = true
 			break
 		}
@@ -125,6 +127,7 @@ func (hub *Hub) CreateRoom(session *SessionInfo, name string, secret string) *Ro
 	}
 	session.Room = new_room
 	session.IsHost = true
+	session.PeerId = peer_id
 	hub.RoomMap.Store(name, new_room)
 	fmt.Println("Room created: name=", new_room.Name, " secret=", new_room.Secret)
 	go new_room.RoomGorroutine()

@@ -91,15 +91,15 @@ func (hub *Hub) JoinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 	return true
 }
 
-func (hub *Hub) CreateRoom(session *SessionInfo, name string, secret string) *Room {
-	_r, _ := hub.RoomMap.Load(name)
+func (hub *Hub) CreateRoom(session *SessionInfo, roomReq *RoomRequest) *Room {
+	_r, _ := hub.RoomMap.Load(roomReq.RoomId)
 	if _r != nil {
-		session.Session.Write(buildMsgPacket(2, 2, "Juego Ya Creado:"+name))
+		session.Session.Write(buildMsgPacket(2, 2, "Juego Ya Creado:"+roomReq.RoomId))
 		return nil
 	}
 	new_room := &Room{
-		Name:           name,
-		Secret:         secret,
+		Name:           roomReq.RoomId,
+		Secret:         roomReq.RoomSecret,
 		Peers:          make([]*SessionInfo, 32),
 		Hub:            hub,
 		UserPacketChan: make(chan UserPacket, 128),
@@ -112,11 +112,9 @@ func (hub *Hub) CreateRoom(session *SessionInfo, name string, secret string) *Ro
 	hub.Mut.Lock()
 	defer hub.Mut.Unlock()
 	added := false
-	peer_id := 0
 	for idx := range hub.Rooms {
 		if hub.Rooms[idx] == nil {
 			hub.Rooms[idx] = new_room
-			peer_id = idx
 			added = true
 			break
 		}
@@ -125,14 +123,17 @@ func (hub *Hub) CreateRoom(session *SessionInfo, name string, secret string) *Ro
 		session.Session.Write(buildMsgPacket(2, 111, "Maxima capacidad de juegos simultaneos"))
 		return nil
 	}
+
 	session.Room = new_room
 	session.IsHost = true
-	session.PeerId = peer_id
-	hub.RoomMap.Store(name, new_room)
+	session.PeerId = 0
+	session.Name = roomReq.PlayerName
+
+	hub.RoomMap.Store(roomReq.RoomId, new_room)
 	fmt.Println("Room created: name=", new_room.Name, " secret=", new_room.Secret)
 	go new_room.RoomGorroutine()
 	session.Session.Write(buildMsgPacket(0, 0, "Ingresando a Juego:"+new_room.Name)) //Room Joined
-
+	session.Session.Write(buildPlayerPacket(uint8(0), 2, session.Name))
 	return new_room
 }
 
@@ -143,7 +144,7 @@ func (hub *Hub) HandlePacket(sessionI *SessionInfo, msg []byte) {
 		data := RoomRequest{}
 		if json.Unmarshal(json_bytes, &data) == nil {
 			fmt.Println("json recieved", data)
-			_ = hub.CreateRoom(sessionI, data.RoomId, data.RoomSecret)
+			_ = hub.CreateRoom(sessionI, &data)
 		} else {
 			fmt.Println("Invalid json recieved")
 		}

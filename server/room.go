@@ -42,6 +42,7 @@ type Room struct {
 type RoomRequest struct {
 	RoomId     string `json:"room_id"`
 	RoomSecret string `json:"room_pwd"`
+	PlayerName string `json:"player_name"`
 }
 
 func (room *Room) RoomGorroutine() {
@@ -72,7 +73,11 @@ func buildUserPacket(ori uint8, dst uint8, msg []byte) []byte {
 	b = append(b, msg...)
 	return b
 }
+
 func (room *Room) SendPacket(ori uint8, dst uint8, msg []byte) {
+	if !room.Open {
+		return
+	}
 	if dst == 255 {
 		for idx, p := range room.Peers {
 			if p == nil || ori == uint8(idx) {
@@ -80,10 +85,15 @@ func (room *Room) SendPacket(ori uint8, dst uint8, msg []byte) {
 			}
 			p.Session.Write(msg)
 		}
-	} else {
+		return
+	} else if int(dst) < len(room.Peers) {
 		if room.Peers[dst] != nil {
 			room.Peers[dst].Session.Write(msg)
+		} else {
+			fmt.Println("SendPacket: Invalid DST peer_id=", dst)
 		}
+	} else {
+		fmt.Println("Sendpacket: Invalid dst, ORI=", ori, " DST=", dst)
 	}
 }
 
@@ -123,8 +133,19 @@ func (room *Room) UserJoin(s *SessionInfo, r *RoomRequest) {
 	if added {
 		s.Room = room
 		s.PeerId = peer_id
+		s.Name = r.PlayerName
+
 		s.Session.Write(buildMsgPacket(0, 0, "Ingresando a Juego:"+r.RoomId)) //Room Joined
-		room.SendPacket(255, 255, buildPLayerPacket(uint8(peer_id), 1, "Player"))
+
+		s.Session.Write(buildPlayerPacket(uint8(s.PeerId), 2, s.Name))
+		room.SendPacket(uint8(s.PeerId), 255, buildPlayerPacket(uint8(s.PeerId), 1, s.Name))
+
+		for _, p := range room.Peers {
+			if p == nil || p == s {
+				continue
+			}
+			s.Session.Write(buildPlayerPacket(uint8(p.PeerId), 1, p.Name))
+		}
 	} else {
 		s.Session.Write(buildMsgPacket(2, 0, "Juego no encontrado:"+r.RoomId)) //Room Joined
 	}
@@ -139,10 +160,11 @@ func (room *Room) UserLeave(s *SessionInfo, close_conn bool) bool {
 		pidx := room.FindUserIdx(s)
 		if pidx > 0 {
 			s.Room = nil
+
 			room.Peers[pidx] = nil
-			s.Session.Write(buildMsgPacket(2, 1, "Juego abandonado1"))
-			//room.SendPacket(uint8(pidx), 255, buildMsgPacket(2, 111, "Un jugador abandonó la partida"))
-			room.SendPacket(255, 255, buildPLayerPacket(uint8(pidx), 0, "Player"))
+
+			s.Session.Write(buildMsgPacket(2, 1, "Juego abandonado"))
+			room.SendPacket(255, 255, buildPlayerPacket(uint8(pidx), 0, s.Name))
 
 			if close_conn {
 				s.Session.Close()
@@ -167,7 +189,7 @@ func (room *Room) CloseRoom(close_clients bool) {
 		}
 		room.Peers[idx] = nil
 		p.Room = nil
-		p.Session.Write(buildMsgPacket(2, 1, "Cerrando Juegp"))
+		p.Session.Write(buildMsgPacket(2, 1, "Cerrando Juego"))
 		if close_clients {
 			p.Session.Close()
 		}
@@ -178,13 +200,16 @@ func (room *Room) CloseRoom(close_clients bool) {
 
 func (room *Room) HandlePacket(sessionI *SessionInfo, msg []byte) {
 	if len(msg) > 4 && msg[0] == ROOM_CMD_PEER_PACKET_SEND {
+		msg[2] = byte(sessionI.PeerId) //Origin field is written in server, not client
 		if !sessionI.IsHost {
 			msg[2] = byte(sessionI.PeerId)
 			if msg[3] != 0 {
-				fmt.Println("Non host sending to invalid destinaition ", msg[3])
+				fmt.Println("Non host can only send packets to the host ", msg[3])
 				return
 			}
-		} else if msg[2] != 255 { //host cant send 255 as origin peer
+			room.SendPacket(msg[2], msg[3], msg[4:])
+			return
+		} else {
 
 		}
 

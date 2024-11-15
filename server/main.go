@@ -33,9 +33,9 @@ func buildMsgPacket(subcmd uint8, msgid uint8, msg string) []byte {
 	return b
 }
 
-func buildPLayerPacket(pid uint8, state uint8, name string) []byte {
+func buildPlayerPacket(playerId uint8, state uint8, name string) []byte {
 	var b = []byte{1, 3, 0, 0}
-	b[2] = pid
+	b[2] = playerId
 	b[3] = state
 	if name != "" {
 		b = append(b, []byte(name)...)
@@ -63,6 +63,7 @@ func main() {
 		hub.SessionMap.Store(s, &SessionInfo{
 			Hub:     hub,
 			Session: s,
+			Name:    "Player",
 		})
 	})
 	m.HandleDisconnect(func(s *melody.Session) {
@@ -70,7 +71,7 @@ func main() {
 		if _info.(*SessionInfo) != nil {
 			info := _info.(*SessionInfo)
 			room := info.Room
-			hub.SessionMap.Delete(s)
+			hub.SessionMap.Delete(s) //Not sure is this removes the key for Garbage Collection
 			if room != nil {
 				room.CmdChan <- RoomChanCmd{Id: ROOM_CHAN_CMD_USER_LEAVE, Session: info}
 			}

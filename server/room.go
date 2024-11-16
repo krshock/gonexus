@@ -83,13 +83,13 @@ func (room *Room) SendPacket(ori uint8, dst uint8, msg []byte) {
 			if p == nil || ori == uint8(idx) {
 				continue
 			}
-			p.Session.Write(msg)
+			p.Session.WriteBinary(msg)
 		}
 		return
 	} else if int(dst) < len(room.Peers) {
 		if room.Peers[dst] != nil {
 			fmt.Println("Packet sent: tgt=", dst, " msg=", msg)
-			room.Peers[dst].Session.Write(msg)
+			room.Peers[dst].Session.WriteBinary(msg)
 		} else {
 			fmt.Println("SendPacket: Invalid DST peer_id=", dst)
 		}
@@ -136,19 +136,19 @@ func (room *Room) UserJoin(s *SessionInfo, r *RoomRequest) {
 		s.PeerId = peer_id
 		s.Name = r.PlayerName
 
-		s.Session.Write(buildMsgPacket(0, 0, "Ingresando a Juego:"+r.RoomId)) //Room Joined
+		s.Session.WriteBinary(buildMsgPacket(0, 0, "Ingresando a Juego:"+r.RoomId)) //Room Joined
 
-		s.Session.Write(buildPlayerPacket(uint8(s.PeerId), 2, s.Name))
+		s.Session.WriteBinary(buildPlayerPacket(uint8(s.PeerId), 2, s.Name))
 		room.SendPacket(uint8(s.PeerId), 255, buildPlayerPacket(uint8(s.PeerId), 1, s.Name))
 
 		for _, p := range room.Peers {
 			if p == nil || p == s {
 				continue
 			}
-			s.Session.Write(buildPlayerPacket(uint8(p.PeerId), 1, p.Name))
+			s.Session.WriteBinary(buildPlayerPacket(uint8(p.PeerId), 1, p.Name))
 		}
 	} else {
-		s.Session.Write(buildMsgPacket(2, 0, "Juego no encontrado:"+r.RoomId)) //Room Joined
+		s.Session.WriteBinary(buildMsgPacket(2, 0, "Juego no encontrado:"+r.RoomId)) //Room Joined
 	}
 }
 
@@ -164,7 +164,7 @@ func (room *Room) UserLeave(s *SessionInfo, close_conn bool) bool {
 
 			room.Peers[pidx] = nil
 
-			s.Session.Write(buildMsgPacket(2, 1, "Juego abandonado"))
+			s.Session.WriteBinary(buildMsgPacket(2, 1, "Juego abandonado"))
 			room.SendPacket(255, 255, buildPlayerPacket(uint8(pidx), 0, s.Name))
 
 			if close_conn {
@@ -175,7 +175,7 @@ func (room *Room) UserLeave(s *SessionInfo, close_conn bool) bool {
 			return true
 		}
 	} else {
-		s.Session.Write(buildMsgPacket(2, 0, "No hay juego activo"))
+		s.Session.WriteBinary(buildMsgPacket(2, 0, "No hay juego activo"))
 	}
 	return false
 }
@@ -183,14 +183,14 @@ func (room *Room) UserLeave(s *SessionInfo, close_conn bool) bool {
 func (room *Room) CloseRoom(close_clients bool) {
 	fmt.Println("room.CloseRoom ", room.Name)
 	room.Open = false
-	room.Hub.RoomMap.Delete(room.Name)
+
 	for idx, p := range room.Peers {
 		if p == nil {
 			continue
 		}
 		room.Peers[idx] = nil
 		p.Room = nil
-		p.Session.Write(buildMsgPacket(2, 1, "Cerrando Juego"))
+		p.Session.WriteBinary(buildMsgPacket(2, 1, "Cerrando Juego"))
 		if close_clients {
 			p.Session.Close()
 		}
@@ -214,10 +214,11 @@ func (room *Room) HandlePacket(sessionI *SessionInfo, msg []byte) {
 
 	} else if len(msg) == 1 && msg[0] == ROOM_CMD_LEAVE_ROOM {
 		//room.UserLeave(sessionI, false)
+		fmt.Println("Leave Packet: ", msg)
 		room.CmdChan <- RoomChanCmd{Id: ROOM_CHAN_CMD_USER_LEAVE, Session: sessionI}
 		return
 	} else if len(msg) == 2 && msg[0] == ROOM_CMD_TOOGLE_JOIN && sessionI.IsHost {
-		sessionI.Session.Write(buildMsgPacket(111, 0, "allowjoin toogle"))
+		sessionI.Session.WriteBinary(buildMsgPacket(111, 0, "allowjoin toogle"))
 		room.AllowJoin = msg[1] != 0
 		return
 	}

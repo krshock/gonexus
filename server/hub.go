@@ -138,7 +138,7 @@ func (hub *Hub) CreateRoom(session *SessionInfo, roomReq *RoomRequest) *Room {
 }
 
 func (hub *Hub) HandlePacket(sessionI *SessionInfo, msg []byte) {
-	fmt.Println("Hub Packet In ", sessionI.Session.RemoteAddr(), " -> ", msg)
+	//fmt.Println("Hub Packet In ", sessionI.Session.RemoteAddr(), " -> ", msg)
 	if msg[0] == HUB_CMD_SC_CREATE_ROOM && sessionI.Room == nil {
 		json_bytes := msg[1:]
 		data := RoomRequest{}

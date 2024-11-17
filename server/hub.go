@@ -48,6 +48,7 @@ func (hub *Hub) HubGorroutine() {
 			hub.HandlePacket(usrpck.SessionI, usrpck.Msg)
 		case chanmsg := <-hub.CmdChan:
 			if chanmsg.Id == HUB_CHAN_CMD_ROOM_UNREGISTER {
+				//free resources from hub
 				hub.RoomMap.Delete(chanmsg.Room.Name)
 				hub.Rooms[chanmsg.Room.Id] = nil
 			}
@@ -68,6 +69,10 @@ func (hub *Hub) JoinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 	}
 	room := value.(*Room)
 
+	if room.AppName != roomReq.AppName {
+		session.Session.WriteBinary(buildMsgPacket(2, 0, "Juego no encontrado(Version incompatible):"+roomReq.RoomId))
+		return false
+	}
 	if !room.AllowJoin {
 		session.Session.WriteBinary(buildMsgPacket(111, 0, "No se aceptan nuevos jugadores:"+roomReq.RoomId))
 		return false
@@ -101,6 +106,7 @@ func (hub *Hub) CreateRoom(session *SessionInfo, roomReq *RoomRequest) *Room {
 	new_room := &Room{
 		Name:           roomReq.RoomId,
 		Secret:         roomReq.RoomSecret,
+		AppName:        roomReq.AppName,
 		Peers:          make([]*SessionInfo, 4),
 		Hub:            hub,
 		UserPacketChan: make(chan UserPacket, 128),

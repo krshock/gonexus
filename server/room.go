@@ -32,6 +32,7 @@ type Room struct {
 	Id             int
 	Name           string
 	Secret         string
+	AppName        string
 	Peers          []*SessionInfo
 	Hub            *Hub
 	UserPacketChan chan (UserPacket)
@@ -42,6 +43,7 @@ type Room struct {
 type RoomRequest struct {
 	RoomId     string `json:"room_id"`
 	RoomSecret string `json:"room_pwd"`
+	AppName    string `json:"app_name"`
 	PlayerName string `json:"player_name"`
 }
 

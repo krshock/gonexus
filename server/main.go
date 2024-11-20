@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	melody "github.com/olahol/melody"
 )
@@ -14,6 +15,49 @@ type SessionInfo struct {
 	Hub     *Hub
 	Name    string
 	IsHost  bool
+	DelayMs uint
+}
+
+func (s *SessionInfo) SendPacket(msg []byte) {
+	if s.DelayMs == 0 {
+		s.Session.WriteBinary(msg)
+	} else {
+		go func() {
+			time.Sleep(time.Duration(s.DelayMs) * time.Millisecond)
+			s.Session.WriteBinary(msg)
+		}()
+	}
+}
+
+func (s *SessionInfo) RecvPacket(msg []byte) {
+	if s.DelayMs == 0 {
+		if msg[0] == 1 && s.Room != nil {
+			s.Room.UserPacketChan <- UserPacket{SessionI: s, Msg: msg[1:]}
+			return
+		} else if msg[0] == 0 {
+			s.Hub.UserPacketChan <- UserPacket{SessionI: s, Msg: msg[1:]}
+			return
+		} else if msg[0] == 5 {
+			fmt.Println("Echoing msg to ", s.Session.RemoteAddr())
+			s.SendPacket(msg)
+			return
+		}
+	} else {
+		go func() {
+			time.Sleep(time.Duration(s.DelayMs) * time.Millisecond)
+			if msg[0] == 1 && s.Room != nil {
+				s.Room.UserPacketChan <- UserPacket{SessionI: s, Msg: msg[1:]}
+				return
+			} else if msg[0] == 0 {
+				s.Hub.UserPacketChan <- UserPacket{SessionI: s, Msg: msg[1:]}
+				return
+			} else if msg[0] == 5 {
+				fmt.Println("Echoing msg to ", s.Session.RemoteAddr())
+				s.SendPacket(msg)
+				return
+			}
+		}()
+	}
 }
 
 type UserPacket struct {
@@ -64,6 +108,7 @@ func main() {
 			Hub:     hub,
 			Session: s,
 			Name:    "Player",
+			DelayMs: 75,
 		})
 	})
 	m.HandleDisconnect(func(s *melody.Session) {
@@ -81,19 +126,7 @@ func main() {
 		_info, _ := hub.SessionMap.Load(s)
 		if _info.(*SessionInfo) != nil {
 			info := _info.(*SessionInfo)
-			if msg[0] == 1 && info.Room != nil {
-				info.Room.UserPacketChan <- UserPacket{SessionI: info, Msg: msg[1:]}
-				return
-			} else if msg[0] == 0 {
-				hub.UserPacketChan <- UserPacket{SessionI: info, Msg: msg[1:]}
-				return
-			} else if msg[0] == 5 {
-				fmt.Println("Echoing msg to ", s.RemoteAddr())
-				s.Write(msg)
-				return
-			}
-			fmt.Println("invalid packet: ", info.Session.Request.RemoteAddr)
-			fmt.Println(msg)
+			info.RecvPacket(msg)
 		}
 	})
 	fmt.Println("GoNexus Listening in 7777...")

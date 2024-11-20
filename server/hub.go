@@ -59,32 +59,32 @@ func (hub *Hub) HubGorroutine() {
 func (hub *Hub) JoinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool {
 	//
 	if roomReq.RoomId == "" || session.Room != nil {
-		session.Session.WriteBinary(buildMsgPacket(2, 0, "Juego no encontrado:"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado:"+roomReq.RoomId))
 		return false
 	}
 	value, _ := hub.RoomMap.Load(roomReq.RoomId)
 	if value == nil || value.(*Room) == nil {
-		session.Session.WriteBinary(buildMsgPacket(2, 0, "Juego no encontrado:"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado:"+roomReq.RoomId))
 		return false
 	}
 	room := value.(*Room)
 
 	if room.AppName != roomReq.AppName {
-		session.Session.WriteBinary(buildMsgPacket(2, 0, "Juego no encontrado(Version incompatible):"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado(Version incompatible):"+roomReq.RoomId))
 		return false
 	}
 	if !room.AllowJoin {
-		session.Session.WriteBinary(buildMsgPacket(111, 0, "No se aceptan nuevos jugadores:"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(111, 0, "No se aceptan nuevos jugadores:"+roomReq.RoomId))
 		return false
 	}
 
 	if room.Secret != roomReq.RoomSecret {
-		session.Session.WriteBinary(buildMsgPacket(2, 0, "Juego no encontrado(Contraseña inválida):"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado(Contraseña inválida):"+roomReq.RoomId))
 		return false
 	}
 
 	if !room.Open {
-		session.Session.WriteBinary(buildMsgPacket(2, 1, "Juego se encuentra cerrado:"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(2, 1, "Juego se encuentra cerrado:"+roomReq.RoomId))
 		return false
 	}
 
@@ -100,7 +100,7 @@ func (hub *Hub) JoinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 func (hub *Hub) CreateRoom(session *SessionInfo, roomReq *RoomRequest) *Room {
 	_r, _ := hub.RoomMap.Load(roomReq.RoomId)
 	if _r != nil {
-		session.Session.WriteBinary(buildMsgPacket(2, 2, "Juego Ya Creado:"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(2, 2, "Juego Ya Creado:"+roomReq.RoomId))
 		return nil
 	}
 	new_room := &Room{
@@ -127,7 +127,7 @@ func (hub *Hub) CreateRoom(session *SessionInfo, roomReq *RoomRequest) *Room {
 		}
 	}
 	if !added {
-		session.Session.WriteBinary(buildMsgPacket(2, 111, "Maxima capacidad de juegos simultaneos"))
+		session.SendPacket(buildMsgPacket(2, 111, "Maxima capacidad de juegos simultaneos"))
 		return nil
 	}
 
@@ -139,8 +139,8 @@ func (hub *Hub) CreateRoom(session *SessionInfo, roomReq *RoomRequest) *Room {
 	hub.RoomMap.Store(roomReq.RoomId, new_room)
 	fmt.Println("Room created: name=", new_room.Name, " secret=", new_room.Secret)
 	go new_room.RoomGorroutine()
-	session.Session.WriteBinary(buildMsgPacket(0, 0, "Ingresando a Juego:"+new_room.Name)) //Room Joined
-	session.Session.WriteBinary(buildPlayerPacket(uint8(0), 2, session.Name))
+	session.SendPacket(buildMsgPacket(0, 0, "Ingresando a Juego:"+new_room.Name)) //Room Joined
+	session.SendPacket(buildPlayerPacket(uint8(0), 2, session.Name))
 	return new_room
 }
 

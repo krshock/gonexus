@@ -90,7 +90,7 @@ func (room *Room) SendPacket(ori uint8, dst uint8, msg []byte) {
 		return
 	} else if int(dst) < len(room.Peers) {
 		if room.Peers[dst] != nil {
-			fmt.Println("Packet sent: tgt=", dst, " msg=", msg)
+			//fmt.Println("Packet sent: tgt=", dst, " msg=", msg)
 			room.Peers[dst].Session.WriteBinary(msg)
 		} else {
 			fmt.Println("SendPacket: Invalid DST peer_id=", dst)
@@ -203,12 +203,12 @@ func (room *Room) CloseRoom(close_clients bool) {
 
 func (room *Room) HandlePacket(sessionI *SessionInfo, msg []byte) {
 	if len(msg) > 4 && msg[0] == ROOM_CMD_PEER_PACKET_SEND {
-		fmt.Println("Peer packet: ", msg)
+		//fmt.Println("Peer packet: ", msg)
 		msg[1] = byte(sessionI.PeerId) //Origin field is written in server, not client
-		fmt.Println("peer packet, origin=", msg[1], "target=", msg[2])
+		//fmt.Println("peer packet, origin=", msg[1], "target=", msg[2])
 
-		if !sessionI.IsHost && msg[3] != 0 {
-			fmt.Println("Non host can only send packets to the host ", msg[2])
+		if !sessionI.IsHost && msg[2] != 0 {
+			fmt.Println("Non host can only send packets to the host ori=", msg[1], " dst=", msg[2], " packet=", msg)
 			return
 		}
 		room.SendPacket(msg[1], msg[2], buildUserPacket(msg[1], msg[2], msg[3:]))

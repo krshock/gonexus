@@ -76,13 +76,13 @@ func buildUserPacket(ori uint8, dst uint8, msg []byte) []byte {
 	return b
 }
 
-func (room *Room) SendPacket(ori uint8, dst uint8, msg []byte) {
+func (room *Room) SendPacket(ori uint8, dst uint8, msg []byte, except_peer uint8) {
 	if !room.Open {
 		return
 	}
 	if dst == 255 {
 		for idx, p := range room.Peers {
-			if p == nil || ori == uint8(idx) {
+			if p == nil || ori == uint8(idx) || except_peer == uint8(idx) {
 				continue
 			}
 			p.SendPacket(msg)
@@ -141,7 +141,7 @@ func (room *Room) UserJoin(s *SessionInfo, r *RoomRequest) {
 		s.SendPacket(buildMsgPacket(0, 0, "Ingresando a Juego:"+r.RoomId)) //Room Joined
 
 		s.SendPacket(buildPlayerPacket(uint8(s.PeerId), 2, s.Name))
-		room.SendPacket(uint8(s.PeerId), 255, buildPlayerPacket(uint8(s.PeerId), 1, s.Name))
+		room.SendPacket(uint8(s.PeerId), 255, buildPlayerPacket(uint8(s.PeerId), 1, s.Name), 255)
 
 		for _, p := range room.Peers {
 			if p == nil || p == s {
@@ -167,7 +167,7 @@ func (room *Room) UserLeave(s *SessionInfo, close_conn bool) bool {
 			room.Peers[pidx] = nil
 
 			s.SendPacket(buildMsgPacket(2, 1, "Juego abandonado"))
-			room.SendPacket(255, 255, buildPlayerPacket(uint8(pidx), 0, s.Name))
+			room.SendPacket(255, 255, buildPlayerPacket(uint8(pidx), 0, s.Name), 255)
 
 			if close_conn {
 				s.Session.Close()
@@ -211,7 +211,7 @@ func (room *Room) HandlePacket(sessionI *SessionInfo, msg []byte) {
 			fmt.Println("Non host can only send packets to the host ori=", msg[1], " dst=", msg[2], " packet=", msg)
 			return
 		}
-		room.SendPacket(msg[1], msg[2], buildUserPacket(msg[1], msg[2], msg[3:]))
+		room.SendPacket(msg[1], msg[2], buildUserPacket(msg[1], msg[2], msg[4:]), msg[3])
 		return
 
 	} else if len(msg) == 1 && msg[0] == ROOM_CMD_LEAVE_ROOM {

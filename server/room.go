@@ -138,10 +138,10 @@ func (room *Room) UserJoin(s *SessionInfo, r *RoomRequest) {
 		s.PeerId = peer_id
 		s.Name = r.PlayerName
 
-		s.SendPacket(buildMsgPacket(0, 0, "Ingresando a Juego:"+r.RoomId)) //Room Joined
+		s.SendPacket(buildMsgPacket(0, 0, "Ingresando a Juego:"+r.RoomId)) //Room Joining
 
 		s.SendPacket(buildPlayerPacket(uint8(s.PeerId), 2, s.Name))
-		room.SendPacket(uint8(s.PeerId), 255, buildPlayerPacket(uint8(s.PeerId), 1, s.Name), 255)
+		room.SendPacket(uint8(s.PeerId), 255, buildPlayerPacket(uint8(s.PeerId), 1, s.Name), uint8(peer_id))
 
 		for _, p := range room.Peers {
 			if p == nil || p == s {
@@ -149,8 +149,11 @@ func (room *Room) UserJoin(s *SessionInfo, r *RoomRequest) {
 			}
 			s.SendPacket(buildPlayerPacket(uint8(p.PeerId), 1, p.Name))
 		}
+
+		s.SendPacket(buildMsgPacket(5, 0, r.RoomId)) //Room Joined
+
 	} else {
-		s.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado:"+r.RoomId)) //Room Joined
+		s.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado:"+r.RoomId)) //Room Not JOined
 	}
 }
 

@@ -139,8 +139,10 @@ func (hub *Hub) CreateRoom(session *SessionInfo, roomReq *RoomRequest) *Room {
 	hub.RoomMap.Store(roomReq.RoomId, new_room)
 	fmt.Println("Room created: name=", new_room.Name, " secret=", new_room.Secret)
 	go new_room.RoomGorroutine()
-	session.SendPacket(buildMsgPacket(0, 0, "Ingresando a Juego:"+new_room.Name)) //Room Joined
+	session.SendPacket(buildMsgPacket(0, 0, "Ingresando a Juego:"+new_room.Name)) //Room Joining
 	session.SendPacket(buildPlayerPacket(uint8(0), 2, session.Name))
+	session.SendPacket(buildMsgPacket(5, 0, new_room.Name)) //Room Joined
+
 	return new_room
 }
 

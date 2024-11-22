@@ -108,7 +108,7 @@ func main() {
 			Hub:     hub,
 			Session: s,
 			Name:    "Player",
-			//DelayMs: 75,
+			DelayMs: 0,
 		})
 	})
 	m.HandleDisconnect(func(s *melody.Session) {

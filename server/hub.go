@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"sync"
+	"time"
 )
 
 const (
@@ -42,6 +44,8 @@ func NewHub() *Hub {
 }
 
 func (hub *Hub) HubGorroutine() {
+	memcheck_timer := time.NewTicker(60 * time.Second)
+	defer memcheck_timer.Stop()
 	for {
 		select {
 		case usrpck := <-hub.UserPacketChan:
@@ -52,8 +56,19 @@ func (hub *Hub) HubGorroutine() {
 				hub.RoomMap.Delete(chanmsg.Room.Name)
 				hub.Rooms[chanmsg.Room.Id] = nil
 			}
+		case <-memcheck_timer.C:
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			fmt.Printf("Alloc = %.3f MB ", ToMBf(m.Alloc))
+			fmt.Printf("TotalAlloc = %.3f MB ", ToMBf(m.TotalAlloc))
+			fmt.Printf("Sys = %.3f MB ", ToMBf(m.Sys))
+			fmt.Printf("NumGC = %v\n", m.NumGC)
 		}
 	}
+
+}
+func ToMBf(val uint64) float64 {
+	return float64(val) / 1024.0 / 1024.0
 }
 
 func (hub *Hub) JoinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool {

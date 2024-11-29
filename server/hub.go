@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
+
+	"golang.org/x/exp/rand"
 )
 
 const (
@@ -59,7 +61,7 @@ func (hub *Hub) HubGorroutine() {
 		case <-memcheck_timer.C:
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
-			fmt.Printf("Alloc = %.3f MB ", ToMBf(m.Alloc))
+			fmt.Printf("HeapAlloc = %.3f MB ", ToMBf(m.HeapAlloc))
 			fmt.Printf("TotalAlloc = %.3f MB ", ToMBf(m.TotalAlloc))
 			fmt.Printf("Sys = %.3f MB ", ToMBf(m.Sys))
 			fmt.Printf("NumGC = %v\n", m.NumGC)
@@ -112,14 +114,29 @@ func (hub *Hub) JoinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 	return true
 }
 
+func (hub *Hub) get_random_room_name() string {
+	ch := "0123456789"
+	for {
+		rndstr := string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))])
+		_, ok := hub.RoomMap.Load(rndstr)
+		if !ok {
+			return rndstr
+		}
+	}
+}
+
 func (hub *Hub) CreateRoom(session *SessionInfo, roomReq *RoomRequest) *Room {
+	if roomReq.RoomSecret == "" {
+		session.SendPacket(buildMsgPacket(2, 2, "Es necesaria una clave"))
+		return nil
+	}
 	_r, _ := hub.RoomMap.Load(roomReq.RoomId)
 	if _r != nil {
 		session.SendPacket(buildMsgPacket(2, 2, "Juego Ya Creado:"+roomReq.RoomId))
 		return nil
 	}
 	new_room := &Room{
-		Name:           roomReq.RoomId,
+		Name:           hub.get_random_room_name(),
 		Secret:         roomReq.RoomSecret,
 		AppName:        roomReq.AppName,
 		Peers:          make([]*SessionInfo, 4),
@@ -131,8 +148,6 @@ func (hub *Hub) CreateRoom(session *SessionInfo, roomReq *RoomRequest) *Room {
 	hub.Rooms = append(hub.Rooms, new_room)
 
 	//Must be called from hub corroutine, if it deadlocks is because
-	hub.Mut.Lock()
-	defer hub.Mut.Unlock()
 	added := false
 	for idx := range hub.Rooms {
 		if hub.Rooms[idx] == nil {
@@ -151,10 +166,11 @@ func (hub *Hub) CreateRoom(session *SessionInfo, roomReq *RoomRequest) *Room {
 	session.PeerId = 0
 	session.Name = roomReq.PlayerName
 
-	hub.RoomMap.Store(roomReq.RoomId, new_room)
+	hub.RoomMap.Store(new_room.Name, new_room)
+
 	fmt.Println("Room created: name=", new_room.Name, " secret=", new_room.Secret)
 	go new_room.RoomGorroutine()
-	session.SendPacket(buildMsgPacket(0, 0, "Ingresando a Juego:"+new_room.Name)) //Room Joining
+	session.SendPacket(buildMsgPacket(0, 0, new_room.Name)) //Room Joining
 	session.SendPacket(buildPlayerPacket(uint8(0), 2, session.Name))
 	session.SendPacket(buildMsgPacket(5, 0, new_room.Name)) //Room Joined
 

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 const (
@@ -60,7 +61,7 @@ func (room *Room) RoomGorroutine() {
 			if cmd_ch.Id == ROOM_CHAN_CMD_SEND_PACKET {
 
 			} else if cmd_ch.Id == ROOM_CHAN_CMD_USER_LEAVE {
-				if cmd_ch.Session.Room.UserLeave(cmd_ch.Session, false) {
+				if cmd_ch.Session.Room.UserLeave(cmd_ch.Session, true) {
 					return
 				}
 			} else if cmd_ch.Id == ROOM_CHAN_CMD_USER_JOIN {
@@ -109,18 +110,6 @@ func (room *Room) FindUserIdx(s *SessionInfo) int {
 	return -1
 }
 
-func (room *Room) GetSessionByPlayername(name string) *SessionInfo {
-	for _, p := range room.Peers {
-		if p == nil {
-			continue
-		}
-		if p.Name == name {
-			return p
-		}
-	}
-	return nil
-}
-
 func (room *Room) UserJoin(s *SessionInfo, r *RoomRequest) {
 	added := false
 	peer_id := 0
@@ -137,7 +126,7 @@ func (room *Room) UserJoin(s *SessionInfo, r *RoomRequest) {
 		s.Room = room
 		s.PeerId = peer_id
 		s.Name = r.PlayerName
-
+		s.Hub.NoRoomClients.Delete(s)
 		s.SendPacket(buildMsgPacket(0, 0, "Ingresando a Juego:"+r.RoomId)) //Room Joining
 
 		s.SendPacket(buildPlayerPacket(uint8(s.PeerId), 2, s.Name))
@@ -159,7 +148,7 @@ func (room *Room) UserJoin(s *SessionInfo, r *RoomRequest) {
 
 // Unregisters session from Room, if session is room's host disconnects all clients
 // and returns true to end Rooms gorroutine
-func (room *Room) UserLeave(s *SessionInfo, close_conn bool) bool {
+func (room *Room) UserLeave(s *SessionInfo, unregister_session bool) bool {
 	fmt.Println("room.Userleave ", s.Session.RemoteAddr())
 
 	if s.Room == room {
@@ -172,11 +161,17 @@ func (room *Room) UserLeave(s *SessionInfo, close_conn bool) bool {
 			s.SendPacket(buildMsgPacket(2, 1, "Juego abandonado"))
 			room.SendPacket(255, 255, buildPlayerPacket(uint8(pidx), 0, s.Name), 255)
 
-			if close_conn {
-				s.Session.Close()
+			if unregister_session {
+				go func() {
+					time.Sleep(1 * time.Second)
+					if s.Session != nil && !s.Session.IsClosed() {
+						s.Session.Close()
+					}
+					s.Hub.UnregisterClient(s)
+				}()
 			}
 		} else if pidx == 0 {
-			room.CloseRoom(close_conn)
+			room.closeRoom(true)
 			return true
 		}
 	} else {
@@ -185,7 +180,7 @@ func (room *Room) UserLeave(s *SessionInfo, close_conn bool) bool {
 	return false
 }
 
-func (room *Room) CloseRoom(close_clients bool) {
+func (room *Room) closeRoom(unregister_sessions bool) {
 	fmt.Println("room.CloseRoom ", room.Name)
 	room.Open = false
 
@@ -196,8 +191,14 @@ func (room *Room) CloseRoom(close_clients bool) {
 		room.Peers[idx] = nil
 		p.Room = nil
 		p.SendPacket(buildMsgPacket(2, 1, "Cerrando Juego"))
-		if close_clients {
-			p.Session.Close()
+		if unregister_sessions {
+			go func() {
+				time.Sleep(1 * time.Second)
+				if p.Session != nil && !p.Session.IsClosed() {
+					p.Session.Close()
+				}
+				p.Hub.UnregisterClient(p)
+			}()
 		}
 	}
 

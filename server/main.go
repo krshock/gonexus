@@ -8,12 +8,13 @@ import (
 )
 
 type SessionInfo struct {
-	PeerId  int
-	Session *melody.Session
-	Room    *Room
-	Hub     *Hub
-	Name    string
-	IsHost  bool
+	PeerId                int
+	Session               *melody.Session
+	Room                  *Room
+	Hub                   *Hub
+	Name                  string
+	IsHost                bool
+	ConnectionTimestampMS uint64
 }
 
 func (s *SessionInfo) SendPacket(msg []byte) {
@@ -78,21 +79,25 @@ func main() {
 	})
 	m.HandleConnect(func(s *melody.Session) {
 		//fmt.Println("New Connection ", s.Request.RemoteAddr)
-		hub.SessionMap.Store(s, &SessionInfo{
-			Hub:     hub,
-			Session: s,
-			Name:    "Player",
+		new_session := &SessionInfo{
+			Hub:                   hub,
+			Session:               s,
+			Name:                  "Player",
+			ConnectionTimestampMS: GetUnixTimestampMS(),
 			//DelayMs: 75,
-		})
+		}
+		hub.SessionMap.Store(s, new_session)
+		hub.RegisterClient(new_session)
 	})
 	m.HandleDisconnect(func(s *melody.Session) {
 		_info, _ := hub.SessionMap.Load(s)
 		if _info.(*SessionInfo) != nil {
 			info := _info.(*SessionInfo)
 			room := info.Room
-			hub.SessionMap.Delete(s) //Not sure is this removes the key for Garbage Collection
 			if room != nil {
 				room.CmdChan <- RoomChanCmd{Id: ROOM_CHAN_CMD_USER_LEAVE, Session: info}
+			} else {
+				hub.UnregisterClient(info)
 			}
 		}
 	})

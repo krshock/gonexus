@@ -17,6 +17,7 @@ const (
 
 const (
 	HUB_CHAN_CMD_ROOM_UNREGISTER = iota
+	HUB_CHAN_CMD_NEW_CLIENT
 )
 
 type HubChanCmd struct {
@@ -34,6 +35,7 @@ type Hub struct {
 	UserPacketChan chan (UserPacket)
 	CmdChan        chan (HubChanCmd)
 	SessionMap     sync.Map
+	NoRoomClients  sync.Map
 }
 
 func NewHub() *Hub {
@@ -46,8 +48,12 @@ func NewHub() *Hub {
 }
 
 func (hub *Hub) HubGorroutine() {
-	memcheck_timer := time.NewTicker(60 * time.Second)
+	memcheck_timer := time.NewTicker(30 * time.Second)
+	client_check_timer := time.NewTicker(1 * time.Second)
 	defer memcheck_timer.Stop()
+	unreg_cli_count := uint64(0)
+	cli_count := uint64(0)
+	room_count := uint64(0)
 	for {
 		select {
 		case usrpck := <-hub.UserPacketChan:
@@ -65,15 +71,60 @@ func (hub *Hub) HubGorroutine() {
 			fmt.Printf("TotalAlloc = %.3f MB ", ToMBf(m.TotalAlloc))
 			fmt.Printf("Sys = %.3f MB ", ToMBf(m.Sys))
 			fmt.Printf("NumGC = %v\n", m.NumGC)
+			fmt.Printf("rooms: %v ", room_count)
+			fmt.Printf("clients: %v ", cli_count)
+			fmt.Printf("unreg_clients: %v \n", unreg_cli_count)
+		case <-client_check_timer.C:
+			current_time := GetUnixTimestampMS()
+			conn_timeout_ms := 1000
+			unreg_cli_count = 0
+			cli_count = 0
+			hub.SessionMap.Range(func(k any, b any) bool {
+				cli_count++
+				return true
+			})
+			room_count = 0
+			hub.RoomMap.Range(func(k any, b any) bool {
+				room_count++
+				return true
+			})
+			hub.NoRoomClients.Range(func(key any, b any) bool {
+				s := key.(*SessionInfo)
+				unreg_cli_count++
+				if s.ConnectionTimestampMS+uint64(conn_timeout_ms) >= current_time {
+					if s.Room != nil {
+						hub.NoRoomClients.Delete(s)
+					} else {
+						s.Session.Close()
+					}
+				}
+				return true
+			})
 		}
 	}
 
 }
+
+func (hub *Hub) RegisterClient(session *SessionInfo) {
+	hub.NoRoomClients.Store(session, true)
+}
+
+func (hub *Hub) UnregisterClient(session *SessionInfo) {
+	if hub == nil {
+		return
+	}
+	hub.NoRoomClients.Delete(session)
+	hub.SessionMap.Delete(session)
+	session.Room = nil
+	session.Hub = nil
+	session.Session = nil
+}
+
 func ToMBf(val uint64) float64 {
 	return float64(val) / 1024.0 / 1024.0
 }
 
-func (hub *Hub) JoinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool {
+func (hub *Hub) joinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool {
 	//
 	if roomReq.RoomId == "" || session.Room != nil {
 		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado:"+roomReq.RoomId))
@@ -125,7 +176,7 @@ func (hub *Hub) get_random_room_name() string {
 	}
 }
 
-func (hub *Hub) CreateRoom(session *SessionInfo, roomReq *RoomRequest) *Room {
+func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *Room {
 	if roomReq.RoomSecret == "" {
 		session.SendPacket(buildMsgPacket(2, 2, "Es necesaria una clave"))
 		return nil
@@ -165,6 +216,7 @@ func (hub *Hub) CreateRoom(session *SessionInfo, roomReq *RoomRequest) *Room {
 	session.IsHost = true
 	session.PeerId = 0
 	session.Name = roomReq.PlayerName
+	hub.NoRoomClients.Delete(session)
 
 	hub.RoomMap.Store(new_room.Name, new_room)
 
@@ -184,7 +236,7 @@ func (hub *Hub) HandlePacket(sessionI *SessionInfo, msg []byte) {
 		data := RoomRequest{}
 		if json.Unmarshal(json_bytes, &data) == nil {
 			fmt.Println("json recieved", data)
-			_ = hub.CreateRoom(sessionI, &data)
+			_ = hub.createRoomRequest(sessionI, &data)
 		} else {
 			fmt.Println("Invalid json recieved")
 		}
@@ -193,7 +245,7 @@ func (hub *Hub) HandlePacket(sessionI *SessionInfo, msg []byte) {
 		data := RoomRequest{}
 		if json.Unmarshal(json_bytes, &data) == nil {
 			fmt.Println("json recieved", data)
-			_ = hub.JoinRoomRequest(sessionI, &data)
+			_ = hub.joinRoomRequest(sessionI, &data)
 		} else {
 			fmt.Println("Invalid json recieved")
 		}

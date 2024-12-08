@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -48,6 +49,12 @@ func NewHub() *Hub {
 }
 
 func (hub *Hub) HubGorroutine() {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println(r)
+			fmt.Println("stacktrace: \n" + string(debug.Stack()))
+		}
+	}()
 	memcheck_timer := time.NewTicker(30 * time.Second)
 	client_check_timer := time.NewTicker(1 * time.Second)
 	defer memcheck_timer.Stop()
@@ -110,11 +117,17 @@ func (hub *Hub) RegisterClient(session *SessionInfo) {
 }
 
 func (hub *Hub) UnregisterClient(session *SessionInfo) {
+	if session.Session != nil {
+		fmt.Println("= Unregistering client, name=", session.Name, " add=", session.Session.RemoteAddr())
+	} else {
+		fmt.Println("= Unregistering client, name=", session.Name)
+	}
 	if hub == nil {
+		fmt.Println("= Hub nil")
 		return
 	}
 	hub.NoRoomClients.Delete(session)
-	hub.SessionMap.Delete(session)
+	hub.SessionMap.Delete(session.Session)
 	session.Room = nil
 	session.Hub = nil
 	session.Session = nil

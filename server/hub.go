@@ -181,7 +181,7 @@ func (hub *Hub) joinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 	return true
 }
 
-func (hub *Hub) get_random_room_name() string {
+func (hub *Hub) getRandomRoomName() string {
 	rand.Seed(uint64(time.Now().UnixNano()))
 	ch := "0123456789"
 	for {
@@ -204,7 +204,7 @@ func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *R
 		return nil
 	}
 	new_room := &Room{
-		Name:           hub.get_random_room_name(),
+		Name:           hub.getRandomRoomName(),
 		Secret:         roomReq.RoomSecret,
 		AppName:        roomReq.AppName,
 		Peers:          make([]*SessionInfo, 4),

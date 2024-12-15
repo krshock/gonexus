@@ -18,7 +18,9 @@ type SessionInfo struct {
 }
 
 func (s *SessionInfo) SendPacket(msg []byte) {
-	s.Session.WriteBinary(msg)
+	if s.Session != nil {
+		s.Session.WriteBinary(msg)
+	}
 }
 
 func (s *SessionInfo) RecvPacket(msg []byte) {
@@ -86,7 +88,6 @@ func main() {
 			ConnectionTimestampMS: GetUnixTimestampMS(),
 			//DelayMs: 75,
 		}
-		hub.SessionMap.Store(s, new_session)
 		hub.RegisterClient(new_session)
 	})
 	m.HandleDisconnect(func(s *melody.Session) {

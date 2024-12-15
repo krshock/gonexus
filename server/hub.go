@@ -113,6 +113,8 @@ func (hub *Hub) HubGorroutine() {
 }
 
 func (hub *Hub) RegisterClient(session *SessionInfo) {
+	fmt.Println("= registering client, add=", session.Session.RemoteAddr())
+	hub.SessionMap.Store(session.Session, session)
 	hub.NoRoomClients.Store(session, true)
 }
 
@@ -126,6 +128,7 @@ func (hub *Hub) UnregisterClient(session *SessionInfo) {
 		fmt.Println("= Hub nil")
 		return
 	}
+	//fmt.Println("debug stacktrace: ", string(debug.Stack()))
 	hub.NoRoomClients.Delete(session)
 	hub.SessionMap.Delete(session.Session)
 	session.Room = nil
@@ -179,6 +182,7 @@ func (hub *Hub) joinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 }
 
 func (hub *Hub) get_random_room_name() string {
+	rand.Seed(uint64(time.Now().UnixNano()))
 	ch := "0123456789"
 	for {
 		rndstr := string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))])
@@ -248,7 +252,7 @@ func (hub *Hub) HandlePacket(sessionI *SessionInfo, msg []byte) {
 		json_bytes := msg[1:]
 		data := RoomRequest{}
 		if json.Unmarshal(json_bytes, &data) == nil {
-			fmt.Println("json recieved", data)
+			fmt.Println("create_room json: ", data)
 			_ = hub.createRoomRequest(sessionI, &data)
 		} else {
 			fmt.Println("Invalid json recieved")
@@ -257,7 +261,7 @@ func (hub *Hub) HandlePacket(sessionI *SessionInfo, msg []byte) {
 		json_bytes := msg[1:]
 		data := RoomRequest{}
 		if json.Unmarshal(json_bytes, &data) == nil {
-			fmt.Println("json recieved", data)
+			fmt.Println("join_room json: ", data)
 			_ = hub.joinRoomRequest(sessionI, &data)
 		} else {
 			fmt.Println("Invalid json recieved")

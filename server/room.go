@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -39,6 +40,14 @@ type Room struct {
 	UserPacketChan chan (UserPacket)
 	CmdChan        chan (RoomChanCmd)
 	AllowJoin      bool
+	Stats          RoomStats
+}
+
+type RoomStats struct {
+	PacketsIn  uint64
+	PacketsOut uint64
+	BytesIn    uint64
+	BytesOut   uint64
 }
 
 type RoomRequest struct {
@@ -87,12 +96,16 @@ func (room *Room) SendPacket(ori uint8, dst uint8, msg []byte, except_peer uint8
 				continue
 			}
 			p.SendPacket(msg)
+			atomic.AddUint64(&room.Stats.PacketsOut, 1)
+			atomic.AddUint64(&room.Stats.BytesOut, uint64(len(msg)))
 		}
 		return
 	} else if int(dst) < len(room.Peers) {
 		if room.Peers[dst] != nil {
 			//fmt.Println("Packet sent: tgt=", dst, " msg=", msg)
 			room.Peers[dst].SendPacket(msg)
+			atomic.AddUint64(&room.Stats.PacketsOut, 1)
+			atomic.AddUint64(&room.Stats.BytesOut, uint64(len(msg)))
 		} else {
 			fmt.Println("SendPacket: Invalid DST peer_id=", dst)
 		}
@@ -206,6 +219,11 @@ func (room *Room) closeRoom(unregister_sessions bool) {
 }
 
 func (room *Room) HandlePacket(sessionI *SessionInfo, msg []byte) {
+	atomic.AddUint64(&room.Stats.PacketsIn, 1)
+	atomic.AddUint64(&room.Stats.BytesIn, uint64(len(msg)))
+	//atomic.AddUint64(&sessionI.Stats.PacketsIn, 1)
+	//atomic.AddUint64(&sessionI.Stats.BytesIn, uint64(len(msg)))
+
 	if len(msg) > 4 && msg[0] == ROOM_CMD_PEER_PACKET_SEND {
 		//fmt.Println("Peer packet: ", msg)
 		msg[1] = byte(sessionI.PeerId) //Origin field is written in server, not client

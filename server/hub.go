@@ -1,11 +1,15 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sync"
+	"text/template"
 	"time"
 
 	"golang.org/x/exp/rand"
@@ -46,6 +50,48 @@ func NewHub() *Hub {
 		UserPacketChan: make(chan UserPacket, 32),
 		CmdChan:        make(chan HubChanCmd, 32),
 	}
+}
+
+var hubListTemplate = template.Must(template.ParseFiles("templates/hub_list.html"))
+
+func (hub *Hub) HandleHubListRequest(w http.ResponseWriter, r *http.Request) {
+	roomArr := make([]map[string]any, 0)
+
+	hub.RoomMap.Range(func(key any, value any) bool {
+		room := value.(*Room)
+		roomArr = append(roomArr, map[string]any{
+			"Name":       room.Name,
+			"AppName":    room.AppName,
+			"PacketsIn":  room.Stats.PacketsIn,
+			"PacketsOut": room.Stats.PacketsOut,
+			"BytesIn":    room.Stats.BytesIn,
+			"BytesOut":   room.Stats.BytesOut,
+		})
+		return true
+	})
+	slices.SortFunc(roomArr, func(a, b map[string]any) int {
+		return cmp.Compare[string](a["Name"].(string), b["Name"].(string))
+	})
+	clientsArr := make([]map[string]any, 0)
+	hub.SessionMap.Range(func(k any, v any) bool {
+		cli := v.(*SessionInfo)
+		clientsArr = append(clientsArr, map[string]any{
+			"Name":       cli.Name,
+			"BytesIn":    cli.Stats.BytesIn,
+			"BytesOut":   cli.Stats.BytesOut,
+			"PacketsIn":  cli.Stats.PacketsIn,
+			"PacketsOut": cli.Stats.PacketsOut,
+		})
+		return true
+	})
+	slices.SortFunc(clientsArr, func(a, b map[string]any) int {
+		return cmp.Compare(a["Name"].(string), b["Name"].(string))
+	})
+
+	hubListTemplate.Execute(w, map[string]any{
+		"rooms":   roomArr,
+		"clients": clientsArr,
+	})
 }
 
 func (hub *Hub) HubGorroutine() {

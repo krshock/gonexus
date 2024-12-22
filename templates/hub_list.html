@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+    <body>
+        <h1>Active Rooms</h1>
+        <table style="width: 100%;border:1px;border-color: black;">
+            <thead>
+                <th>Room Name</th>
+                <th>App Name</th>
+                <th>Packets In</th> 
+                <th>Packets Out</th> 
+                <th>Bytes In</th> 
+                <th>Bytes Out</th> 
+            </thead>
+            <tbody>
+                {{range .rooms}}
+                <tr>
+                    <td>{{.Name}}</td>
+                    <td>{{.AppName}}</td>
+                    <td>{{.PacketsIn}}</td>
+                    <td>{{.PacketsOut}}</td>
+                    <td>{{.BytesIn}}</td>
+                    <td>{{.BytesOut}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        <h1>Clients</h1>
+        <table style="width: 100%;border:1px;border-color: black;">
+            <thead>
+                <th>Name</th>
+                <th>Packets In</th> 
+                <th>Packets Out</th> 
+                <th>Bytes In</th> 
+                <th>Bytes Out</th> 
+            </thead>
+            <tbody>
+                {{range .clients}}
+                <tr>
+                    <td>{{.Name}}</td>
+                    <td>{{.PacketsIn}}</td>
+                    <td>{{.PacketsOut}}</td>
+                    <td>{{.BytesIn}}B</td>
+                    <td>{{.BytesOut}}B</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </body>
+</html>

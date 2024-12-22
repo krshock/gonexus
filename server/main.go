@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"sync/atomic"
 
 	melody "github.com/olahol/melody"
 )
@@ -15,15 +16,28 @@ type SessionInfo struct {
 	Name                  string
 	IsHost                bool
 	ConnectionTimestampMS uint64
+	Stats                 SessionStats
+}
+
+type SessionStats struct {
+	PacketsIn  uint64
+	PacketsOut uint64
+	BytesIn    uint64
+	BytesOut   uint64
 }
 
 func (s *SessionInfo) SendPacket(msg []byte) {
 	if s.Session != nil {
 		s.Session.WriteBinary(msg)
+		atomic.AddUint64(&s.Stats.PacketsOut, 1)
+		atomic.AddUint64(&s.Stats.BytesOut, uint64(len(msg)))
 	}
 }
 
 func (s *SessionInfo) RecvPacket(msg []byte) {
+	atomic.AddUint64(&s.Stats.PacketsIn, 1)
+	atomic.AddUint64(&s.Stats.BytesIn, uint64(len(msg)))
+
 	if msg[0] == 1 && s.Room != nil {
 		s.Room.UserPacketChan <- UserPacket{SessionI: s, Msg: msg[1:]}
 		return
@@ -75,6 +89,9 @@ func main() {
 	hub := NewHub()
 	go hub.HubGorroutine()
 
+	http.HandleFunc("GET /list", func(w http.ResponseWriter, r *http.Request) {
+		hub.HandleHubListRequest(w, r)
+	})
 	http.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) {
 		//fmt.Println("Web request from ", r.RemoteAddr)
 		HandleRequestMelody(m, w, r, nil)

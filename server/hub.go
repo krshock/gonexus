@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"text/template"
 	"time"
 
@@ -41,6 +42,8 @@ type Hub struct {
 	CmdChan        chan (HubChanCmd)
 	SessionMap     sync.Map
 	NoRoomClients  sync.Map
+	ClientCount    int64
+	RoomCount      int64
 }
 
 func NewHub() *Hub {
@@ -75,22 +78,44 @@ func (hub *Hub) HandleHubListRequest(w http.ResponseWriter, r *http.Request) {
 	clientsArr := make([]map[string]any, 0)
 	hub.SessionMap.Range(func(k any, v any) bool {
 		cli := v.(*SessionInfo)
-		clientsArr = append(clientsArr, map[string]any{
+		cliMap := map[string]any{
 			"Name":       cli.Name,
 			"BytesIn":    cli.Stats.BytesIn,
 			"BytesOut":   cli.Stats.BytesOut,
 			"PacketsIn":  cli.Stats.PacketsIn,
 			"PacketsOut": cli.Stats.PacketsOut,
-		})
+		}
+		if cli.Room == nil {
+			cliMap["RoomName"] = ""
+		} else {
+			cliMap["RoomName"] = cli.Room.Name
+		}
+		clientsArr = append(clientsArr, cliMap)
 		return true
 	})
 	slices.SortFunc(clientsArr, func(a, b map[string]any) int {
-		return cmp.Compare(a["Name"].(string), b["Name"].(string))
+		if a["RoomName"].(string) == b["RoomName"].(string) {
+			return cmp.Compare(a["Name"].(string), b["Name"].(string))
+		} else {
+			return cmp.Compare(a["RoomName"].(string), b["RoomName"].(string))
+
+		}
 	})
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	sysMap := map[string]any{
+		"HeapAlloc":    fmt.Sprintf("%.3f MB", ToMBf(m.HeapAlloc)),
+		"TotalAlloc":   fmt.Sprintf("%.3f MB ", ToMBf(m.TotalAlloc)),
+		"SysMem":       fmt.Sprintf("%.3f MB", ToMBf(m.Sys)),
+		"NumGC":        m.NumGC,
+		"ClientsCount": hub.ClientCount,
+		"RoomsCount":   hub.RoomCount,
+	}
 
 	hubListTemplate.Execute(w, map[string]any{
 		"rooms":   roomArr,
 		"clients": clientsArr,
+		"stats":   sysMap,
 	})
 }
 
@@ -101,9 +126,8 @@ func (hub *Hub) HubGorroutine() {
 			fmt.Println("stacktrace: \n" + string(debug.Stack()))
 		}
 	}()
-	memcheck_timer := time.NewTicker(30 * time.Second)
 	client_check_timer := time.NewTicker(1 * time.Second)
-	defer memcheck_timer.Stop()
+	defer client_check_timer.Stop()
 	unreg_cli_count := uint64(0)
 	cli_count := uint64(0)
 	room_count := uint64(0)
@@ -117,16 +141,6 @@ func (hub *Hub) HubGorroutine() {
 				hub.RoomMap.Delete(chanmsg.Room.Name)
 				hub.Rooms[chanmsg.Room.Id] = nil
 			}
-		case <-memcheck_timer.C:
-			var m runtime.MemStats
-			runtime.ReadMemStats(&m)
-			fmt.Printf("HeapAlloc = %.3f MB ", ToMBf(m.HeapAlloc))
-			fmt.Printf("TotalAlloc = %.3f MB ", ToMBf(m.TotalAlloc))
-			fmt.Printf("Sys = %.3f MB ", ToMBf(m.Sys))
-			fmt.Printf("NumGC = %v\n", m.NumGC)
-			fmt.Printf("rooms: %v ", room_count)
-			fmt.Printf("clients: %v ", cli_count)
-			fmt.Printf("unreg_clients: %v \n", unreg_cli_count)
 		case <-client_check_timer.C:
 			current_time := GetUnixTimestampMS()
 			conn_timeout_ms := 1000
@@ -162,6 +176,7 @@ func (hub *Hub) RegisterClient(session *SessionInfo) {
 	fmt.Println("= registering client, add=", session.Session.RemoteAddr())
 	hub.SessionMap.Store(session.Session, session)
 	hub.NoRoomClients.Store(session, true)
+	atomic.AddInt64(&hub.ClientCount, 1)
 }
 
 func (hub *Hub) UnregisterClient(session *SessionInfo) {
@@ -175,6 +190,7 @@ func (hub *Hub) UnregisterClient(session *SessionInfo) {
 		return
 	}
 	//fmt.Println("debug stacktrace: ", string(debug.Stack()))
+	atomic.AddInt64(&hub.ClientCount, -1)
 	hub.NoRoomClients.Delete(session)
 	hub.SessionMap.Delete(session.Session)
 	session.Room = nil
@@ -229,9 +245,9 @@ func (hub *Hub) joinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 
 func (hub *Hub) getRandomRoomName() string {
 	rand.Seed(uint64(time.Now().UnixNano()))
-	ch := "0123456789"
+	ch := "0123456789abcdefghjkmnABCDEFGHJKLMN"
 	for {
-		rndstr := string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))])
+		rndstr := string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))])
 		_, ok := hub.RoomMap.Load(rndstr)
 		if !ok {
 			return rndstr

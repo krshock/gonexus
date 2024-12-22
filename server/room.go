@@ -61,6 +61,9 @@ func (room *Room) RoomGorroutine() {
 	fmt.Println("New room gorroutine ", room.Name)
 	defer fmt.Println("Exiting room goroutine ", room.Name)
 
+	atomic.AddInt64(&room.Hub.RoomCount, 1)
+	defer atomic.AddInt64(&room.Hub.RoomCount, -1)
+
 	room.Open = true
 	for {
 		select {

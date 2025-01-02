@@ -44,6 +44,13 @@ type Hub struct {
 	NoRoomClients  sync.Map
 	ClientCount    int64
 	RoomCount      int64
+	Stats          HubStats
+}
+
+type HubStats struct {
+	RoomCreations     int64
+	RoomJoins         int64
+	ClientConnections int64
 }
 
 func NewHub() *Hub {
@@ -59,12 +66,13 @@ var hubListTemplate = template.Must(template.ParseFiles("templates/hub_list.html
 
 func (hub *Hub) HandleHubListRequest(w http.ResponseWriter, r *http.Request) {
 	roomArr := make([]map[string]any, 0)
-
+	time_now_unix := time.Now().UnixMilli()
 	hub.RoomMap.Range(func(key any, value any) bool {
 		room := value.(*Room)
 		roomArr = append(roomArr, map[string]any{
 			"Name":       room.Name,
 			"AppName":    room.AppName,
+			"Time":       (time_now_unix - room.CreationTimestamp) / int64(1000),
 			"PacketsIn":  room.Stats.PacketsIn,
 			"PacketsOut": room.Stats.PacketsOut,
 			"BytesIn":    room.Stats.BytesIn,
@@ -104,12 +112,15 @@ func (hub *Hub) HandleHubListRequest(w http.ResponseWriter, r *http.Request) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	sysMap := map[string]any{
-		"HeapAlloc":    fmt.Sprintf("%.3f MB", ToMBf(m.HeapAlloc)),
-		"TotalAlloc":   fmt.Sprintf("%.3f MB ", ToMBf(m.TotalAlloc)),
-		"SysMem":       fmt.Sprintf("%.3f MB", ToMBf(m.Sys)),
-		"NumGC":        m.NumGC,
-		"ClientsCount": hub.ClientCount,
-		"RoomsCount":   hub.RoomCount,
+		"HeapAlloc":         fmt.Sprintf("%.3f MB", ToMBf(m.HeapAlloc)),
+		"TotalAlloc":        fmt.Sprintf("%.3f MB ", ToMBf(m.TotalAlloc)),
+		"SysMem":            fmt.Sprintf("%.3f MB", ToMBf(m.Sys)),
+		"NumGC":             m.NumGC,
+		"ClientsCount":      hub.ClientCount,
+		"RoomsCount":        hub.RoomCount,
+		"RoomCreations":     hub.Stats.RoomCreations,
+		"RoomJoins":         hub.Stats.RoomJoins,
+		"ClientConnections": hub.Stats.ClientConnections,
 	}
 
 	hubListTemplate.Execute(w, map[string]any{
@@ -128,9 +139,6 @@ func (hub *Hub) HubGorroutine() {
 	}()
 	client_check_timer := time.NewTicker(1 * time.Second)
 	defer client_check_timer.Stop()
-	unreg_cli_count := uint64(0)
-	cli_count := uint64(0)
-	room_count := uint64(0)
 	for {
 		select {
 		case usrpck := <-hub.UserPacketChan:
@@ -144,20 +152,8 @@ func (hub *Hub) HubGorroutine() {
 		case <-client_check_timer.C:
 			current_time := GetUnixTimestampMS()
 			conn_timeout_ms := 1000
-			unreg_cli_count = 0
-			cli_count = 0
-			hub.SessionMap.Range(func(k any, b any) bool {
-				cli_count++
-				return true
-			})
-			room_count = 0
-			hub.RoomMap.Range(func(k any, b any) bool {
-				room_count++
-				return true
-			})
 			hub.NoRoomClients.Range(func(key any, b any) bool {
 				s := key.(*SessionInfo)
-				unreg_cli_count++
 				if s.ConnectionTimestampMS+uint64(conn_timeout_ms) >= current_time {
 					if s.Room != nil {
 						hub.NoRoomClients.Delete(s)
@@ -177,6 +173,7 @@ func (hub *Hub) RegisterClient(session *SessionInfo) {
 	hub.SessionMap.Store(session.Session, session)
 	hub.NoRoomClients.Store(session, true)
 	atomic.AddInt64(&hub.ClientCount, 1)
+	atomic.AddInt64(&hub.Stats.ClientConnections, 1)
 }
 
 func (hub *Hub) UnregisterClient(session *SessionInfo) {
@@ -233,7 +230,7 @@ func (hub *Hub) joinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 		session.SendPacket(buildMsgPacket(2, 1, "Juego se encuentra cerrado:"+roomReq.RoomId))
 		return false
 	}
-
+	atomic.AddInt64(&hub.Stats.RoomJoins, 1)
 	room.CmdChan <- RoomChanCmd{
 		Id:      ROOM_CHAN_CMD_USER_JOIN,
 		Session: session,
@@ -266,13 +263,14 @@ func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *R
 		return nil
 	}
 	new_room := &Room{
-		Name:           hub.getRandomRoomName(),
-		Secret:         roomReq.RoomSecret,
-		AppName:        roomReq.AppName,
-		Peers:          make([]*SessionInfo, 4),
-		Hub:            hub,
-		UserPacketChan: make(chan UserPacket, 128),
-		CmdChan:        make(chan RoomChanCmd, 128),
+		Name:              hub.getRandomRoomName(),
+		Secret:            roomReq.RoomSecret,
+		AppName:           roomReq.AppName,
+		Peers:             make([]*SessionInfo, 4),
+		Hub:               hub,
+		UserPacketChan:    make(chan UserPacket, 128),
+		CmdChan:           make(chan RoomChanCmd, 128),
+		CreationTimestamp: time.Now().UnixMilli(),
 	}
 	new_room.Peers[0] = session
 	hub.Rooms = append(hub.Rooms, new_room)
@@ -298,6 +296,7 @@ func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *R
 	hub.NoRoomClients.Delete(session)
 
 	hub.RoomMap.Store(new_room.Name, new_room)
+	atomic.AddInt64(&hub.Stats.RoomCreations, 1)
 
 	fmt.Println("Room created: name=", new_room.Name, " secret=", new_room.Secret)
 	go new_room.RoomGorroutine()

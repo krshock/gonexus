@@ -40,11 +40,31 @@
                 <td>{{.stats.RoomsCount}}</td>
             </tr>
         </table>
+        <h2>Stats</h2>
+        <table>
+            <thead>
+                <th>Stat</th>
+                <th>Value</th>
+            </thead>
+            <tr>
+                <td>Room Create Count</td>
+                <td>{{.stats.RoomCreations}}</td>
+            </tr>
+            <tr>
+                <td>Room Join Count</td>
+                <td>{{.stats.RoomJoins}}</td>
+            </tr>
+            <tr>
+                <td>Client Connection Requests</td>
+                <td>{{.stats.ClientConnections}}</td>
+            </tr>
+        </table>
         <h2>Active Rooms</h2>
         <table style="width: 100%;">
             <thead>
                 <th>Room Name</th>
                 <th>App Name</th>
+                <th>Time (sec)</th>
                 <th>Packets In</th> 
                 <th>Packets Out</th> 
                 <th>Bytes In</th> 
@@ -55,6 +75,7 @@
                 <tr>
                     <td>{{.Name}}</td>
                     <td>{{.AppName}}</td>
+                    <td>{{.Time}}</td>
                     <td>{{.PacketsIn}}</td>
                     <td>{{.PacketsOut}}</td>
                     <td>{{.BytesIn}}</td>

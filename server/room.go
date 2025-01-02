@@ -29,18 +29,19 @@ type RoomChanCmd struct {
 }
 
 type Room struct {
-	Mut            sync.Mutex
-	Open           bool
-	Id             int
-	Name           string
-	Secret         string
-	AppName        string
-	Peers          []*SessionInfo
-	Hub            *Hub
-	UserPacketChan chan (UserPacket)
-	CmdChan        chan (RoomChanCmd)
-	AllowJoin      bool
-	Stats          RoomStats
+	Mut               sync.Mutex
+	Open              bool
+	Id                int
+	Name              string
+	Secret            string
+	AppName           string
+	Peers             []*SessionInfo
+	Hub               *Hub
+	UserPacketChan    chan (UserPacket)
+	CmdChan           chan (RoomChanCmd)
+	AllowJoin         bool
+	Stats             RoomStats
+	CreationTimestamp int64
 }
 
 type RoomStats struct {

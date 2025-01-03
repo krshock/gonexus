@@ -16,23 +16,9 @@ import (
 	"golang.org/x/exp/rand"
 )
 
-const (
-	HUB_CMD_SC_CREATE_ROOM = iota
-	HUB_CMD_SC_JOIN_ROOM
-)
-
-const (
-	HUB_CHAN_CMD_ROOM_UNREGISTER = iota
-	HUB_CHAN_CMD_NEW_CLIENT
-)
-
-type HubChanCmd struct {
-	Id      int
-	Session *SessionInfo
-	Room    *Room
-	IntVal  int
-}
-
+// The struct Hub contains all clients and room information of a server. Wg (WaitingGroup) is
+// not used because the function HubGorroutine keeps running while the hub is active to process
+// events
 type Hub struct {
 	Mut            sync.Mutex
 	Rooms          []*Room
@@ -47,10 +33,31 @@ type Hub struct {
 	Stats          HubStats
 }
 
+// Stats of a running hub
 type HubStats struct {
 	RoomCreations     int64
 	RoomJoins         int64
 	ClientConnections int64
+}
+
+// IDs for network packets processed by the hub
+const (
+	HUB_CMD_SC_CREATE_ROOM = iota
+	HUB_CMD_SC_JOIN_ROOM
+)
+
+// Ids for commands sent using hub.CmdChan channel
+const (
+	HUB_CHAN_CMD_ROOM_UNREGISTER = iota
+	HUB_CHAN_CMD_NEW_CLIENT
+)
+
+// HubChanCmd contains parameters for the hub event channel read inside the function HubGorroutine
+type HubChanCmd struct {
+	Id      int
+	Session *SessionInfo
+	Room    *Room
+	IntVal  int
 }
 
 func NewHub() *Hub {
@@ -64,6 +71,7 @@ func NewHub() *Hub {
 
 var hubListTemplate = template.Must(template.ParseFiles("templates/hub_list.html"))
 
+// System Info http request handler. Lists server stats, memory, rooms and client data
 func (hub *Hub) HandleHubListRequest(w http.ResponseWriter, r *http.Request) {
 	roomArr := make([]map[string]any, 0)
 	time_now_unix := time.Now().UnixMilli()
@@ -130,6 +138,8 @@ func (hub *Hub) HandleHubListRequest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Main hub event handler. All hub members can be modified in this loop as a thread-safety
+// constraint to keep concurrency bugs away.
 func (hub *Hub) HubGorroutine() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -168,6 +178,7 @@ func (hub *Hub) HubGorroutine() {
 
 }
 
+// Registers a client connection as a hub's session
 func (hub *Hub) RegisterClient(session *SessionInfo) {
 	fmt.Println("= registering client, add=", session.Session.RemoteAddr())
 	hub.SessionMap.Store(session.Session, session)
@@ -176,6 +187,7 @@ func (hub *Hub) RegisterClient(session *SessionInfo) {
 	atomic.AddInt64(&hub.Stats.ClientConnections, 1)
 }
 
+// Unregisters a client connection in the hub
 func (hub *Hub) UnregisterClient(session *SessionInfo) {
 	if session.Session != nil {
 		fmt.Println("= Unregistering client, name=", session.Name, " add=", session.Session.RemoteAddr())
@@ -199,6 +211,7 @@ func ToMBf(val uint64) float64 {
 	return float64(val) / 1024.0 / 1024.0
 }
 
+// Processes a roomRequest struct to join a client to a room.
 func (hub *Hub) joinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool {
 	//
 	if roomReq.RoomId == "" || session.Room != nil {
@@ -240,6 +253,8 @@ func (hub *Hub) joinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 	return true
 }
 
+// Creates a random room name, a string of 3 characters that doesn't is not currently registered
+// as a existing room.
 func (hub *Hub) getRandomRoomName() string {
 	rand.Seed(uint64(time.Now().UnixNano()))
 	ch := "0123456789abcdefghjkmnABCDEFGHJKLMN"
@@ -252,6 +267,7 @@ func (hub *Hub) getRandomRoomName() string {
 	}
 }
 
+// Processes a roomRequest of room creation, creates a room in the hub
 func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *Room {
 	if roomReq.RoomSecret == "" {
 		session.SendPacket(buildMsgPacket(2, 2, "Es necesaria una clave"))
@@ -307,6 +323,8 @@ func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *R
 	return new_room
 }
 
+// Hub's Packet handler. Must be called from the hub corroutine to conform to the
+// concurrency model
 func (hub *Hub) HandlePacket(sessionI *SessionInfo, msg []byte) {
 	//fmt.Println("Hub Packet In ", sessionI.Session.RemoteAddr(), " -> ", msg)
 	if msg[0] == HUB_CMD_SC_CREATE_ROOM && sessionI.Room == nil {

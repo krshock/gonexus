@@ -20,23 +20,23 @@ type SessionInfo struct {
 }
 
 type SessionStats struct {
-	PacketsIn  uint64
-	PacketsOut uint64
-	BytesIn    uint64
-	BytesOut   uint64
+	PacketsIn  int64
+	PacketsOut int64
+	BytesIn    int64
+	BytesOut   int64
 }
 
 func (s *SessionInfo) SendPacket(msg []byte) {
 	if s.Session != nil {
 		s.Session.WriteBinary(msg)
-		atomic.AddUint64(&s.Stats.PacketsOut, 1)
-		atomic.AddUint64(&s.Stats.BytesOut, uint64(len(msg)))
+		atomic.AddInt64(&s.Stats.PacketsOut, 1)
+		atomic.AddInt64(&s.Stats.BytesOut, int64(len(msg)))
 	}
 }
 
 func (s *SessionInfo) RecvPacket(msg []byte) {
-	atomic.AddUint64(&s.Stats.PacketsIn, 1)
-	atomic.AddUint64(&s.Stats.BytesIn, uint64(len(msg)))
+	atomic.AddInt64(&s.Stats.PacketsIn, 1)
+	atomic.AddInt64(&s.Stats.BytesIn, int64(len(msg)))
 
 	if msg[0] == 1 && s.Room != nil {
 		s.Room.UserPacketChan <- UserPacket{SessionI: s, Msg: msg[1:]}

@@ -261,13 +261,13 @@ func (hub *Hub) joinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 	return true
 }
 
-// Creates a random room name, a string of 3 characters that doesn't is not currently registered
-// as a existing room.
+// Creates and registers random new room name in the hub
 func (hub *Hub) getRandomRoomName(room *Room) {
 	ch := "0123456789abcdefghjkmnABCDEFGHJKLMN"
-	rand.Seed(uint64(time.Now().UnixNano()))
 	for {
+		rand.Seed(uint64(time.Now().UnixNano()))
 		rndstr := string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))])
+		// Here comes the threadsafety
 		if _, loaded := hub.RoomMap.LoadOrStore(rndstr, room); !loaded {
 			room.Name = rndstr
 			return
@@ -275,10 +275,11 @@ func (hub *Hub) getRandomRoomName(room *Room) {
 	}
 }
 
+// Creates and registers random new client UniqueId in the hub
 func (hub *Hub) setRandomClientId(conn *SessionInfo) {
 	ch := "0123456789abcdefghjkmnABCDEFGHJKLMN"
-	rand.Seed(uint64(time.Now().UnixNano()))
 	for {
+		rand.Seed(uint64(time.Now().UnixNano()))
 		rndstr := string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))])
 		if _, loaded := hub.SessionIds.LoadOrStore(rndstr, conn); !loaded {
 			conn.UniqueId = rndstr

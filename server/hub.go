@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -69,7 +70,10 @@ func NewHub() *Hub {
 	}
 }
 
-var hubListTemplate = template.Must(template.ParseFiles("templates/hub_list.html"))
+//go:embed hubstats.html
+var hubListTemplateSource string
+
+var hubListTemplate = template.Must(template.New("Name").Parse(hubListTemplateSource))
 
 // System Info http request handler. Lists server stats, memory, rooms and client data
 func (hub *Hub) HandleHubListRequest(w http.ResponseWriter, r *http.Request) {

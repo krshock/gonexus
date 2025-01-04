@@ -32,6 +32,7 @@ type Hub struct {
 	ClientCount    int64
 	RoomCount      int64
 	Stats          HubStats
+	SessionIds     sync.Map
 }
 
 // Stats of a running hub
@@ -99,6 +100,7 @@ func (hub *Hub) HandleHubListRequest(w http.ResponseWriter, r *http.Request) {
 	hub.SessionMap.Range(func(k any, v any) bool {
 		cli := v.(*SessionInfo)
 		cliMap := map[string]any{
+			"UniqueId":   cli.UniqueId,
 			"Name":       cli.Name,
 			"BytesIn":    cli.Stats.BytesIn,
 			"BytesOut":   cli.Stats.BytesOut,
@@ -189,6 +191,7 @@ func (hub *Hub) RegisterClient(session *SessionInfo) {
 	hub.NoRoomClients.Store(session, true)
 	atomic.AddInt64(&hub.ClientCount, 1)
 	atomic.AddInt64(&hub.Stats.ClientConnections, 1)
+	hub.setRandomClientId(session)
 }
 
 // Unregisters a client connection in the hub
@@ -206,6 +209,7 @@ func (hub *Hub) UnregisterClient(session *SessionInfo) {
 	atomic.AddInt64(&hub.ClientCount, -1)
 	hub.NoRoomClients.Delete(session)
 	hub.SessionMap.Delete(session.Session)
+	hub.SessionIds.Delete(session)
 	session.Room = nil
 	session.Hub = nil
 	session.Session = nil
@@ -259,14 +263,26 @@ func (hub *Hub) joinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool
 
 // Creates a random room name, a string of 3 characters that doesn't is not currently registered
 // as a existing room.
-func (hub *Hub) getRandomRoomName() string {
-	rand.Seed(uint64(time.Now().UnixNano()))
+func (hub *Hub) getRandomRoomName(room *Room) {
 	ch := "0123456789abcdefghjkmnABCDEFGHJKLMN"
+	rand.Seed(uint64(time.Now().UnixNano()))
 	for {
 		rndstr := string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))])
-		_, ok := hub.RoomMap.Load(rndstr)
-		if !ok {
-			return rndstr
+		if _, loaded := hub.RoomMap.LoadOrStore(rndstr, room); !loaded {
+			room.Name = rndstr
+			return
+		}
+	}
+}
+
+func (hub *Hub) setRandomClientId(conn *SessionInfo) {
+	ch := "0123456789abcdefghjkmnABCDEFGHJKLMN"
+	rand.Seed(uint64(time.Now().UnixNano()))
+	for {
+		rndstr := string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))])
+		if _, loaded := hub.SessionIds.LoadOrStore(rndstr, conn); !loaded {
+			conn.UniqueId = rndstr
+			return
 		}
 	}
 }
@@ -283,7 +299,6 @@ func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *R
 		return nil
 	}
 	new_room := &Room{
-		Name:              hub.getRandomRoomName(),
 		Secret:            roomReq.RoomSecret,
 		AppName:           roomReq.AppName,
 		Peers:             make([]*SessionInfo, 4),
@@ -308,7 +323,7 @@ func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *R
 		session.SendPacket(buildMsgPacket(2, 111, "Maxima capacidad de juegos simultaneos"))
 		return nil
 	}
-
+	hub.getRandomRoomName(new_room)
 	session.Room = new_room
 	session.IsHost = true
 	session.PeerId = 0

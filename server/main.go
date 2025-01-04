@@ -17,6 +17,7 @@ type SessionInfo struct {
 	IsHost                bool
 	ConnectionTimestampMS uint64
 	Stats                 SessionStats
+	UniqueId              string
 }
 
 type SessionStats struct {

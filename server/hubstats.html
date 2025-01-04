@@ -87,6 +87,7 @@
         <h2>Clients</h2>
         <table style="width: 100%;">
             <thead>
+                <th>Id</th>
                 <th>Name</th>
                 <th>Room</th>
                 <th>Packets In</th> 
@@ -97,6 +98,7 @@
             <tbody>
                 {{range .clients}}
                 <tr>
+                    <td>{{.UniqueId}}</td>
                     <td>{{.Name}}</td>
                     <td>{{.RoomName}}</td>
                     <td>{{.PacketsIn}}</td>

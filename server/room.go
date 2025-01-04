@@ -106,7 +106,6 @@ func (room *Room) SendPacket(ori uint8, dst uint8, msg []byte, except_peer uint8
 		return
 	} else if int(dst) < len(room.Peers) {
 		if room.Peers[dst] != nil {
-			//fmt.Println("Packet sent: tgt=", dst, " msg=", msg)
 			room.Peers[dst].SendPacket(msg)
 			atomic.AddInt64(&room.Stats.PacketsOut, 1)
 			atomic.AddInt64(&room.Stats.BytesOut, int64(len(msg)))
@@ -225,23 +224,16 @@ func (room *Room) closeRoom(unregister_sessions bool) {
 func (room *Room) HandlePacket(sessionI *SessionInfo, msg []byte) {
 	atomic.AddInt64(&room.Stats.PacketsIn, 1)
 	atomic.AddInt64(&room.Stats.BytesIn, int64(len(msg)))
-	//atomic.AddUint64(&sessionI.Stats.PacketsIn, 1)
-	//atomic.AddUint64(&sessionI.Stats.BytesIn, uint64(len(msg)))
 
 	if len(msg) > 4 && msg[0] == ROOM_CMD_PEER_PACKET_SEND {
-		//fmt.Println("Peer packet: ", msg)
 		msg[1] = byte(sessionI.PeerId) //Origin field is written in server, not client
-		//fmt.Println("peer packet, origin=", msg[1], "target=", msg[2])
-
 		if !sessionI.IsHost && msg[2] != 0 {
 			fmt.Println("Non host can only send packets to the host ori=", msg[1], " dst=", msg[2], " packet=", msg)
 			return
 		}
 		room.SendPacket(msg[1], msg[2], buildUserPacket(msg[1], msg[2], msg[4:]), msg[3])
 		return
-
 	} else if len(msg) == 1 && msg[0] == ROOM_CMD_LEAVE_ROOM {
-		//room.UserLeave(sessionI, false)
 		fmt.Println("Leave Packet: ", msg)
 		room.CmdChan <- RoomChanCmd{Id: ROOM_CHAN_CMD_USER_LEAVE, Session: sessionI}
 		return

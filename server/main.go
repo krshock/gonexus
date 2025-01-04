@@ -45,10 +45,6 @@ func (s *SessionInfo) RecvPacket(msg []byte) {
 	} else if msg[0] == 0 {
 		s.Hub.UserPacketChan <- UserPacket{SessionI: s, Msg: msg[1:]}
 		return
-	} else if msg[0] == 5 {
-		fmt.Println("Echoing msg to ", s.Session.RemoteAddr())
-		s.SendPacket(msg)
-		return
 	}
 }
 
@@ -94,17 +90,14 @@ func main() {
 		hub.HandleHubListRequest(w, r)
 	})
 	http.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) {
-		//fmt.Println("Web request from ", r.RemoteAddr)
 		HandleRequestMelody(m, w, r, nil)
 	})
 	m.HandleConnect(func(s *melody.Session) {
-		//fmt.Println("New Connection ", s.Request.RemoteAddr)
 		new_session := &SessionInfo{
 			Hub:                   hub,
 			Session:               s,
 			Name:                  "Player",
 			ConnectionTimestampMS: GetUnixTimestampMS(),
-			//DelayMs: 75,
 		}
 		hub.RegisterClient(new_session)
 	})

@@ -22,7 +22,6 @@ import (
 // events
 type Hub struct {
 	Mut            sync.Mutex
-	Rooms          []*Room
 	RoomMap        sync.Map
 	Wg             sync.WaitGroup
 	UserPacketChan chan (UserPacket)
@@ -65,7 +64,6 @@ type HubChanCmd struct {
 func NewHub() *Hub {
 	return &Hub{
 		Mut:            sync.Mutex{},
-		Rooms:          make([]*Room, 4),
 		UserPacketChan: make(chan UserPacket, 32),
 		CmdChan:        make(chan HubChanCmd, 32),
 	}
@@ -163,7 +161,6 @@ func (hub *Hub) HubGorroutine() {
 			if chanmsg.Id == HUB_CHAN_CMD_ROOM_UNREGISTER {
 				//free resources from hub
 				hub.RoomMap.Delete(chanmsg.Room.Name)
-				hub.Rooms[chanmsg.Room.Id] = nil
 			}
 		case <-client_check_timer.C:
 			current_time := GetUnixTimestampMS()
@@ -309,21 +306,7 @@ func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *R
 		CreationTimestamp: time.Now().UnixMilli(),
 	}
 	new_room.Peers[0] = session
-	hub.Rooms = append(hub.Rooms, new_room)
 
-	//Must be called from hub corroutine, if it deadlocks is because
-	added := false
-	for idx := range hub.Rooms {
-		if hub.Rooms[idx] == nil {
-			hub.Rooms[idx] = new_room
-			added = true
-			break
-		}
-	}
-	if !added {
-		session.SendPacket(buildMsgPacket(2, 111, "Maxima capacidad de juegos simultaneos"))
-		return nil
-	}
 	hub.getRandomRoomName(new_room)
 	session.Room = new_room
 	session.IsHost = true
@@ -346,7 +329,6 @@ func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *R
 // Hub's Packet handler. Must be called from the hub corroutine to conform to the
 // concurrency model
 func (hub *Hub) HandlePacket(sessionI *SessionInfo, msg []byte) {
-	//fmt.Println("Hub Packet In ", sessionI.Session.RemoteAddr(), " -> ", msg)
 	if msg[0] == HUB_CMD_SC_CREATE_ROOM && sessionI.Room == nil {
 		json_bytes := msg[1:]
 		data := RoomRequest{}

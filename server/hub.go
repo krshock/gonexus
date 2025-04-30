@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"cmp"
@@ -118,7 +118,6 @@ func (hub *Hub) HandleHubListRequest(w http.ResponseWriter, r *http.Request) {
 			return cmp.Compare(a["Name"].(string), b["Name"].(string))
 		} else {
 			return cmp.Compare(a["RoomName"].(string), b["RoomName"].(string))
-
 		}
 	})
 	var m runtime.MemStats
@@ -159,7 +158,7 @@ func (hub *Hub) HubGorroutine() {
 			hub.HandlePacket(usrpck.SessionI, usrpck.Msg)
 		case chanmsg := <-hub.CmdChan:
 			if chanmsg.Id == HUB_CHAN_CMD_ROOM_UNREGISTER {
-				//free resources from hub
+				// free resources from hub
 				hub.RoomMap.Delete(chanmsg.Room.Name)
 			}
 		case <-client_check_timer.C:
@@ -178,7 +177,6 @@ func (hub *Hub) HubGorroutine() {
 			})
 		}
 	}
-
 }
 
 // Registers a client connection as a hub's session
@@ -202,7 +200,7 @@ func (hub *Hub) UnregisterClient(session *SessionInfo) {
 		fmt.Println("= Hub nil")
 		return
 	}
-	//fmt.Println("debug stacktrace: ", string(debug.Stack()))
+	// fmt.Println("debug stacktrace: ", string(debug.Stack()))
 	atomic.AddInt64(&hub.ClientCount, -1)
 	hub.NoRoomClients.Delete(session)
 	hub.SessionMap.Delete(session.Session)
@@ -319,9 +317,9 @@ func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *R
 
 	fmt.Println("Room created: name=", new_room.Name, " secret=", new_room.Secret)
 	go new_room.RoomGorroutine()
-	session.SendPacket(buildMsgPacket(0, 0, new_room.Name)) //Room Joining
+	session.SendPacket(buildMsgPacket(0, 0, new_room.Name)) // Room Joining
 	session.SendPacket(buildPlayerPacket(uint8(0), 2, session.Name))
-	session.SendPacket(buildMsgPacket(5, 0, new_room.Name)) //Room Joined
+	session.SendPacket(buildMsgPacket(5, 0, new_room.Name)) // Room Joined
 
 	return new_room
 }

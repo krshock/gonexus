@@ -8,20 +8,20 @@ import (
 )
 
 const (
-	ROOM_CHAN_CMD_SEND_PACKET = iota
-	ROOM_CHAN_CMD_USER_JOIN
-	ROOM_CHAN_CMD_USER_LEAVE
-	ROOM_CHAN_CMD_ROOM_CLOSE
+	RoomChanCmdSendPacket = iota
+	RoomChanCmdUserJoin
+	RoomChanCmdUserLeave
+	RoomChanCmdRoomClose
 )
 
 const (
-	ROOM_CMD_PEER_PACKET_SEND = iota
-	ROOM_CMD_LEAVE_ROOM
-	ROOM_CMD_TOOGLE_JOIN
+	RoomCmdPeerPacketSend = iota
+	RoomCmdLeaveRoom
+	RoomCmdToogleJoin
 )
 
 type RoomChanCmd struct {
-	Id           int
+	ID           int
 	PacketTarget int
 	Msg          []byte
 	Session      *SessionInfo
@@ -31,7 +31,7 @@ type RoomChanCmd struct {
 type Room struct {
 	Mut               sync.Mutex
 	Open              bool
-	Id                int
+	ID                int
 	Name              string
 	Secret            string
 	AppName           string
@@ -52,7 +52,7 @@ type RoomStats struct {
 }
 
 type RoomRequest struct {
-	RoomId     string `json:"room_id"`
+	RoomID     string `json:"room_id"`
 	RoomSecret string `json:"room_pwd"`
 	AppName    string `json:"app_name"`
 	PlayerName string `json:"player_name"`
@@ -70,14 +70,15 @@ func (room *Room) RoomGorroutine() {
 		select {
 		case usrpkt := <-room.UserPacketChan:
 			room.HandlePacket(usrpkt.SessionI, usrpkt.Msg)
-		case cmd_ch := <-room.CmdChan:
-			if cmd_ch.Id == ROOM_CHAN_CMD_SEND_PACKET {
-			} else if cmd_ch.Id == ROOM_CHAN_CMD_USER_LEAVE {
-				if cmd_ch.Session.Room.UserLeave(cmd_ch.Session, true) {
+		case cmdCh := <-room.CmdChan:
+			switch cmdCh.ID {
+			case RoomChanCmdSendPacket:
+			case RoomChanCmdUserJoin:
+				room.UserJoin(cmdCh.Session, cmdCh.RoomReq)
+			case RoomChanCmdUserLeave:
+				if cmdCh.Session.Room.UserLeave(cmdCh.Session, true) {
 					return
 				}
-			} else if cmd_ch.Id == ROOM_CHAN_CMD_USER_JOIN {
-				room.UserJoin(cmd_ch.Session, cmd_ch.RoomReq)
 			}
 		}
 	}
@@ -89,13 +90,13 @@ func buildUserPacket(ori uint8, dst uint8, msg []byte) []byte {
 	return b
 }
 
-func (room *Room) SendPacket(ori uint8, dst uint8, msg []byte, except_peer uint8) {
+func (room *Room) SendPacket(ori uint8, dst uint8, msg []byte, exceptPeer uint8) {
 	if !room.Open {
 		return
 	}
 	if dst == 255 {
 		for idx, p := range room.Peers {
-			if p == nil || ori == uint8(idx) || except_peer == uint8(idx) {
+			if p == nil || ori == uint8(idx) || exceptPeer == uint8(idx) {
 				continue
 			}
 			p.SendPacket(msg)
@@ -127,11 +128,11 @@ func (room *Room) FindUserIdx(s *SessionInfo) int {
 
 func (room *Room) UserJoin(s *SessionInfo, r *RoomRequest) {
 	added := false
-	peer_id := 0
+	peerID := 0
 	for idx := range room.Peers {
 		if room.Peers[idx] == nil {
 			room.Peers[idx] = s
-			peer_id = idx
+			peerID = idx
 			added = true
 			break
 		}
@@ -139,31 +140,31 @@ func (room *Room) UserJoin(s *SessionInfo, r *RoomRequest) {
 
 	if added {
 		s.Room = room
-		s.PeerId = peer_id
+		s.PeerID = peerID
 		s.Name = r.PlayerName
 		s.Hub.NoRoomClients.Delete(s)
-		s.SendPacket(buildMsgPacket(0, 0, "Ingresando a Juego:"+r.RoomId)) // Room Joining
+		s.SendPacket(buildMsgPacket(0, 0, "Ingresando a Juego:"+r.RoomID)) // Room Joining
 
-		s.SendPacket(buildPlayerPacket(uint8(s.PeerId), 2, s.Name))
-		room.SendPacket(uint8(s.PeerId), 255, buildPlayerPacket(uint8(s.PeerId), 1, s.Name), uint8(peer_id))
+		s.SendPacket(buildPlayerPacket(uint8(s.PeerID), 2, s.Name))
+		room.SendPacket(uint8(s.PeerID), 255, buildPlayerPacket(uint8(s.PeerID), 1, s.Name), uint8(peerID))
 
 		for _, p := range room.Peers {
 			if p == nil || p == s {
 				continue
 			}
-			s.SendPacket(buildPlayerPacket(uint8(p.PeerId), 1, p.Name))
+			s.SendPacket(buildPlayerPacket(uint8(p.PeerID), 1, p.Name))
 		}
 
-		s.SendPacket(buildMsgPacket(5, 0, r.RoomId)) // Room Joined
+		s.SendPacket(buildMsgPacket(5, 0, r.RoomID)) // Room Joined
 
 	} else {
-		s.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado:"+r.RoomId)) // Room Not JOined
+		s.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado:"+r.RoomID)) // Room Not JOined
 	}
 }
 
-// Unregisters session from Room, if session is room's host disconnects all clients
+// UserLeave , Unregisters session from Room, if session is room's host disconnects all clients
 // and returns true to end Rooms gorroutine
-func (room *Room) UserLeave(s *SessionInfo, unregister_session bool) bool {
+func (room *Room) UserLeave(s *SessionInfo, unregisterSession bool) bool {
 	fmt.Println("room.Userleave ", s.Session.RemoteAddr())
 
 	if s.Room == room {
@@ -176,7 +177,7 @@ func (room *Room) UserLeave(s *SessionInfo, unregister_session bool) bool {
 			s.SendPacket(buildMsgPacket(2, 1, "Juego abandonado"))
 			room.SendPacket(255, 255, buildPlayerPacket(uint8(pidx), 0, s.Name), 255)
 
-			if unregister_session {
+			if unregisterSession {
 				go func() {
 					time.Sleep(1 * time.Second)
 					if s.Session != nil && !s.Session.IsClosed() {
@@ -195,7 +196,7 @@ func (room *Room) UserLeave(s *SessionInfo, unregister_session bool) bool {
 	return false
 }
 
-func (room *Room) closeRoom(unregister_sessions bool) {
+func (room *Room) closeRoom(unregisterSessions bool) {
 	fmt.Println("room.CloseRoom ", room.Name)
 	room.Open = false
 
@@ -206,7 +207,7 @@ func (room *Room) closeRoom(unregister_sessions bool) {
 		room.Peers[idx] = nil
 		p.Room = nil
 		p.SendPacket(buildMsgPacket(2, 1, "Cerrando Juego"))
-		if unregister_sessions {
+		if unregisterSessions {
 			go func() {
 				time.Sleep(1 * time.Second)
 				if p.Session != nil && !p.Session.IsClosed() {
@@ -217,30 +218,30 @@ func (room *Room) closeRoom(unregister_sessions bool) {
 		}
 	}
 
-	room.Hub.CmdChan <- HubChanCmd{Id: HUB_CHAN_CMD_ROOM_UNREGISTER, Room: room}
+	room.Hub.CmdChan <- HubChanCmd{ID: HubChanCmdRoomUnregister, Room: room}
 }
 
 func (room *Room) HandlePacket(sessionI *SessionInfo, msg []byte) {
 	atomic.AddInt64(&room.Stats.PacketsIn, 1)
 	atomic.AddInt64(&room.Stats.BytesIn, int64(len(msg)))
 
-	if len(msg) > 4 && msg[0] == ROOM_CMD_PEER_PACKET_SEND {
-		msg[1] = byte(sessionI.PeerId) // Origin field is written in server, not client
+	if len(msg) > 4 && msg[0] == RoomCmdPeerPacketSend {
+		msg[1] = byte(sessionI.PeerID) // Origin field is written in server, not client
 		if !sessionI.IsHost && msg[2] != 0 {
-			fmt.Println("Non host can only send packets to the host ori=", msg[1], " dst=", msg[2], " packet=", msg)
+			fmt.Println("Non host can only send packets to the host ori=", msg[1], " dst=", msg[2], " packet=", string(msg))
 			return
 		}
 		room.SendPacket(msg[1], msg[2], buildUserPacket(msg[1], msg[2], msg[4:]), msg[3])
 		return
-	} else if len(msg) == 1 && msg[0] == ROOM_CMD_LEAVE_ROOM {
-		fmt.Println("Leave Packet: ", msg)
-		room.CmdChan <- RoomChanCmd{Id: ROOM_CHAN_CMD_USER_LEAVE, Session: sessionI}
+	} else if len(msg) == 1 && msg[0] == RoomCmdLeaveRoom {
+		fmt.Println("Leave Packet: ", string(msg))
+		room.CmdChan <- RoomChanCmd{ID: RoomChanCmdUserLeave, Session: sessionI}
 		return
-	} else if len(msg) == 2 && msg[0] == ROOM_CMD_TOOGLE_JOIN && sessionI.IsHost {
+	} else if len(msg) == 2 && msg[0] == RoomCmdToogleJoin && sessionI.IsHost {
 		sessionI.SendPacket(buildMsgPacket(111, 0, "allowjoin toogle"))
 		room.AllowJoin = msg[1] != 0
 		return
 	}
 	fmt.Println("Invalid room packet, ", sessionI.Session.RemoteAddr())
-	fmt.Println(msg)
+	fmt.Println(string(msg))
 }

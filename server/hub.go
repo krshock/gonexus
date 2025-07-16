@@ -1,3 +1,4 @@
+// Package server
 package server
 
 import (
@@ -5,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"runtime"
 	"runtime/debug"
@@ -17,7 +19,7 @@ import (
 	"golang.org/x/exp/rand"
 )
 
-// The struct Hub contains all clients and room information of a server. Wg (WaitingGroup) is
+// Hub contains all clients and room information of a server. Wg (WaitingGroup) is
 // not used because the function HubGorroutine keeps running while the hub is active to process
 // events
 type Hub struct {
@@ -34,7 +36,7 @@ type Hub struct {
 	SessionIds     sync.Map
 }
 
-// Stats of a running hub
+// HubStats stores stats about the
 type HubStats struct {
 	RoomCreations     int64
 	RoomJoins         int64
@@ -43,19 +45,19 @@ type HubStats struct {
 
 // IDs for network packets processed by the hub
 const (
-	HUB_CMD_SC_CREATE_ROOM = iota
-	HUB_CMD_SC_JOIN_ROOM
+	HubCmdScCreateRoom = iota
+	HubCmdSJoinRoom
 )
 
 // Ids for commands sent using hub.CmdChan channel
 const (
-	HUB_CHAN_CMD_ROOM_UNREGISTER = iota
-	HUB_CHAN_CMD_NEW_CLIENT
+	HubChanCmdRoomUnregister = iota
+	HubChanCmdNewClient
 )
 
 // HubChanCmd contains parameters for the hub event channel read inside the function HubGorroutine
 type HubChanCmd struct {
-	Id      int
+	ID      int
 	Session *SessionInfo
 	Room    *Room
 	IntVal  int
@@ -74,16 +76,16 @@ var hubListTemplateSource string
 
 var hubListTemplate = template.Must(template.New("Name").Parse(hubListTemplateSource))
 
-// System Info http request handler. Lists server stats, memory, rooms and client data
+// HandleHubListRequest , System Info http request handler. Lists server stats, memory, rooms and client data
 func (hub *Hub) HandleHubListRequest(w http.ResponseWriter, r *http.Request) {
 	roomArr := make([]map[string]any, 0)
-	time_now_unix := time.Now().UnixMilli()
+	timeNowUnix := time.Now().UnixMilli()
 	hub.RoomMap.Range(func(key any, value any) bool {
 		room := value.(*Room)
 		roomArr = append(roomArr, map[string]any{
 			"Name":       room.Name,
 			"AppName":    room.AppName,
-			"Time":       (time_now_unix - room.CreationTimestamp) / int64(1000),
+			"Time":       (timeNowUnix - room.CreationTimestamp) / int64(1000),
 			"PacketsIn":  room.Stats.PacketsIn,
 			"PacketsOut": room.Stats.PacketsOut,
 			"BytesIn":    room.Stats.BytesIn,
@@ -92,13 +94,13 @@ func (hub *Hub) HandleHubListRequest(w http.ResponseWriter, r *http.Request) {
 		return true
 	})
 	slices.SortFunc(roomArr, func(a, b map[string]any) int {
-		return cmp.Compare[string](a["Name"].(string), b["Name"].(string))
+		return cmp.Compare(a["Name"].(string), b["Name"].(string))
 	})
 	clientsArr := make([]map[string]any, 0)
 	hub.SessionMap.Range(func(k any, v any) bool {
 		cli := v.(*SessionInfo)
 		cliMap := map[string]any{
-			"UniqueId":   cli.UniqueId,
+			"UniqueId":   cli.UniqueID,
 			"Name":       cli.Name,
 			"BytesIn":    cli.Stats.BytesIn,
 			"BytesOut":   cli.Stats.BytesOut,
@@ -141,7 +143,7 @@ func (hub *Hub) HandleHubListRequest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Main hub event handler. All hub members can be modified in this loop as a thread-safety
+// HubGorroutine ,Main hub event handler. All hub members can be modified in this loop as a thread-safety
 // constraint to keep concurrency bugs away.
 func (hub *Hub) HubGorroutine() {
 	defer func() {
@@ -150,27 +152,29 @@ func (hub *Hub) HubGorroutine() {
 			fmt.Println("stacktrace: \n" + string(debug.Stack()))
 		}
 	}()
-	client_check_timer := time.NewTicker(1 * time.Second)
-	defer client_check_timer.Stop()
+	clientCheckTimer := time.NewTicker(1 * time.Second)
+	defer clientCheckTimer.Stop()
 	for {
 		select {
 		case usrpck := <-hub.UserPacketChan:
 			hub.HandlePacket(usrpck.SessionI, usrpck.Msg)
 		case chanmsg := <-hub.CmdChan:
-			if chanmsg.Id == HUB_CHAN_CMD_ROOM_UNREGISTER {
+			if chanmsg.ID == HubChanCmdRoomUnregister {
 				// free resources from hub
 				hub.RoomMap.Delete(chanmsg.Room.Name)
 			}
-		case <-client_check_timer.C:
-			current_time := GetUnixTimestampMS()
-			conn_timeout_ms := 1000
+		case <-clientCheckTimer.C:
+			currentTime := GetUnixTimestampMS()
+			connTimeoutMs := 1000
 			hub.NoRoomClients.Range(func(key any, b any) bool {
 				s := key.(*SessionInfo)
-				if s.ConnectionTimestampMS+uint64(conn_timeout_ms) >= current_time {
+				if s.ConnectionTimestampMS+uint64(connTimeoutMs) >= currentTime {
 					if s.Room != nil {
 						hub.NoRoomClients.Delete(s)
 					} else {
+						log.Printf("hub:client_check_timer: Closing session: %v", s.UniqueID)
 						s.Session.Close()
+						// s.Close(1000, "Action timeout")
 					}
 				}
 				return true
@@ -179,17 +183,17 @@ func (hub *Hub) HubGorroutine() {
 	}
 }
 
-// Registers a client connection as a hub's session
+// RegisterClient , Registers a client connection as a hub's session
 func (hub *Hub) RegisterClient(session *SessionInfo) {
 	fmt.Println("= registering client, add=", session.Session.RemoteAddr())
 	hub.SessionMap.Store(session.Session, session)
 	hub.NoRoomClients.Store(session, true)
 	atomic.AddInt64(&hub.ClientCount, 1)
 	atomic.AddInt64(&hub.Stats.ClientConnections, 1)
-	hub.setRandomClientId(session)
+	hub.setRandomClientID(session)
 }
 
-// Unregisters a client connection in the hub
+// UnregisterClient a client connection in the hub
 func (hub *Hub) UnregisterClient(session *SessionInfo) {
 	if session.Session != nil {
 		fmt.Println("= Unregistering client, name=", session.Name, " add=", session.Session.RemoteAddr())
@@ -217,38 +221,41 @@ func ToMBf(val uint64) float64 {
 // Processes a roomRequest struct to join a client to a room.
 func (hub *Hub) joinRoomRequest(session *SessionInfo, roomReq *RoomRequest) bool {
 	//
-	if roomReq.RoomId == "" || session.Room != nil {
-		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado:"+roomReq.RoomId))
+	if roomReq.RoomID == "" || session.Room != nil {
+		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado:"+roomReq.RoomID))
 		return false
 	}
-	value, _ := hub.RoomMap.Load(roomReq.RoomId)
+	value, _ := hub.RoomMap.Load(roomReq.RoomID)
 	if value == nil || value.(*Room) == nil {
-		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado:"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado:"+roomReq.RoomID))
 		return false
 	}
 	room := value.(*Room)
 
 	if room.AppName != roomReq.AppName {
-		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado(Version incompatible):"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado(Version incompatible):"+roomReq.RoomID))
 		return false
 	}
 	if !room.AllowJoin {
-		session.SendPacket(buildMsgPacket(111, 0, "No se aceptan nuevos jugadores:"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(111, 0, "No se aceptan nuevos jugadores:"+roomReq.RoomID))
+		// session.Close(101, "No new players Accepted")
 		return false
 	}
 
 	if room.Secret != roomReq.RoomSecret {
-		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado(Contraseña inválida):"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(2, 0, "Juego no encontrado(Contraseña inválida):"+roomReq.RoomID))
+		// session.Close(100, "Room/Password invalid")
 		return false
 	}
 
 	if !room.Open {
-		session.SendPacket(buildMsgPacket(2, 1, "Juego se encuentra cerrado:"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(2, 1, "Juego se encuentra cerrado:"+roomReq.RoomID))
+		// session.Close(100, "Game is closed")
 		return false
 	}
 	atomic.AddInt64(&hub.Stats.RoomJoins, 1)
 	room.CmdChan <- RoomChanCmd{
-		Id:      ROOM_CHAN_CMD_USER_JOIN,
+		ID:      RoomChanCmdUserJoin,
 		Session: session,
 		RoomReq: roomReq,
 	}
@@ -270,14 +277,14 @@ func (hub *Hub) getRandomRoomName(room *Room) {
 	}
 }
 
-// Creates and registers random new client UniqueId in the hub
-func (hub *Hub) setRandomClientId(conn *SessionInfo) {
+// setRandomClientID , Creates and registers random new client UniqueId in the hub
+func (hub *Hub) setRandomClientID(conn *SessionInfo) {
 	ch := "0123456789abcdefghjkmnABCDEFGHJKLMN"
 	for {
 		rand.Seed(uint64(time.Now().UnixNano()))
 		rndstr := string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))]) + string(ch[rand.Intn(len(ch))])
 		if _, loaded := hub.SessionIds.LoadOrStore(rndstr, conn); !loaded {
-			conn.UniqueId = rndstr
+			conn.UniqueID = rndstr
 			return
 		}
 	}
@@ -287,14 +294,16 @@ func (hub *Hub) setRandomClientId(conn *SessionInfo) {
 func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *Room {
 	if roomReq.RoomSecret == "" {
 		session.SendPacket(buildMsgPacket(2, 2, "Es necesaria una clave"))
+		// session.Close(200, "Password required")
 		return nil
 	}
-	_r, _ := hub.RoomMap.Load(roomReq.RoomId)
+	_r, _ := hub.RoomMap.Load(roomReq.RoomID)
 	if _r != nil {
-		session.SendPacket(buildMsgPacket(2, 2, "Juego Ya Creado:"+roomReq.RoomId))
+		session.SendPacket(buildMsgPacket(2, 2, "Juego Ya Creado:"+roomReq.RoomID))
+		// session.Close(201, "Juego ya existe")
 		return nil
 	}
-	new_room := &Room{
+	newRoom := &Room{
 		Secret:            roomReq.RoomSecret,
 		AppName:           roomReq.AppName,
 		Peers:             make([]*SessionInfo, 4),
@@ -303,43 +312,43 @@ func (hub *Hub) createRoomRequest(session *SessionInfo, roomReq *RoomRequest) *R
 		CmdChan:           make(chan RoomChanCmd, 128),
 		CreationTimestamp: time.Now().UnixMilli(),
 	}
-	new_room.Peers[0] = session
+	newRoom.Peers[0] = session
 
-	hub.getRandomRoomName(new_room)
-	session.Room = new_room
+	hub.getRandomRoomName(newRoom)
+	session.Room = newRoom
 	session.IsHost = true
-	session.PeerId = 0
+	session.PeerID = 0
 	session.Name = roomReq.PlayerName
 	hub.NoRoomClients.Delete(session)
 
-	hub.RoomMap.Store(new_room.Name, new_room)
+	hub.RoomMap.Store(newRoom.Name, newRoom)
 	atomic.AddInt64(&hub.Stats.RoomCreations, 1)
 
-	fmt.Println("Room created: name=", new_room.Name, " secret=", new_room.Secret)
-	go new_room.RoomGorroutine()
-	session.SendPacket(buildMsgPacket(0, 0, new_room.Name)) // Room Joining
+	fmt.Println("Room created: name=", newRoom.Name, " secret=", newRoom.Secret)
+	go newRoom.RoomGorroutine()
+	session.SendPacket(buildMsgPacket(0, 0, newRoom.Name)) // Room Joining
 	session.SendPacket(buildPlayerPacket(uint8(0), 2, session.Name))
-	session.SendPacket(buildMsgPacket(5, 0, new_room.Name)) // Room Joined
+	session.SendPacket(buildMsgPacket(5, 0, newRoom.Name)) // Room Joined
 
-	return new_room
+	return newRoom
 }
 
-// Hub's Packet handler. Must be called from the hub corroutine to conform to the
+// HandlePacket receives packets. Must be called from the hub corroutine to conform to the
 // concurrency model
 func (hub *Hub) HandlePacket(sessionI *SessionInfo, msg []byte) {
-	if msg[0] == HUB_CMD_SC_CREATE_ROOM && sessionI.Room == nil {
-		json_bytes := msg[1:]
+	if msg[0] == HubCmdScCreateRoom && sessionI.Room == nil {
+		jsonBytes := msg[1:]
 		data := RoomRequest{}
-		if json.Unmarshal(json_bytes, &data) == nil {
+		if json.Unmarshal(jsonBytes, &data) == nil {
 			fmt.Println("create_room json: ", data)
 			_ = hub.createRoomRequest(sessionI, &data)
 		} else {
 			fmt.Println("Invalid json recieved")
 		}
-	} else if msg[0] == HUB_CMD_SC_JOIN_ROOM && sessionI.Room == nil {
-		json_bytes := msg[1:]
+	} else if msg[0] == HubCmdSJoinRoom && sessionI.Room == nil {
+		jsonBytes := msg[1:]
 		data := RoomRequest{}
-		if json.Unmarshal(json_bytes, &data) == nil {
+		if json.Unmarshal(jsonBytes, &data) == nil {
 			fmt.Println("join_room json: ", data)
 			_ = hub.joinRoomRequest(sessionI, &data)
 		} else {

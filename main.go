@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/krshock/mob84hub/server"
@@ -19,20 +19,20 @@ func main() {
 	hub := server.NewHub()
 	go hub.HubGorroutine()
 
-	http.HandleFunc("GET /list", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("GET /nexus/list", func(w http.ResponseWriter, r *http.Request) {
 		hub.HandleHubListRequest(w, r)
 	})
-	http.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("GET /nexus/ws", func(w http.ResponseWriter, r *http.Request) {
 		HandleRequestMelody(m, w, r, nil)
 	})
 	m.HandleConnect(func(s *melody.Session) {
-		new_session := &server.SessionInfo{
+		newSession := &server.SessionInfo{
 			Hub:                   hub,
 			Session:               s,
 			Name:                  "Player",
 			ConnectionTimestampMS: server.GetUnixTimestampMS(),
 		}
-		hub.RegisterClient(new_session)
+		hub.RegisterClient(newSession)
 	})
 	m.HandleDisconnect(func(s *melody.Session) {
 		_info, _ := hub.SessionMap.Load(s)
@@ -40,7 +40,7 @@ func main() {
 			info := _info.(*server.SessionInfo)
 			room := info.Room
 			if room != nil {
-				room.CmdChan <- server.RoomChanCmd{Id: server.ROOM_CHAN_CMD_USER_LEAVE, Session: info}
+				room.CmdChan <- server.RoomChanCmd{ID: server.RoomChanCmdUserLeave, Session: info}
 			} else {
 				hub.UnregisterClient(info)
 			}
@@ -53,6 +53,6 @@ func main() {
 			info.RecvPacket(msg)
 		}
 	})
-	fmt.Println("GoNexus Listening in 7777...")
-	http.ListenAndServe(":7777", nil)
+	log.Println("GoNexus Listening in 7777...")
+	http.ListenAndServe("127.0.0.1:7777", nil)
 }

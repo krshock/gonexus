@@ -1,13 +1,14 @@
 package server
 
 import (
+	"log"
 	"sync/atomic"
 
 	"github.com/olahol/melody"
 )
 
 type SessionInfo struct {
-	PeerId                int
+	PeerID                int
 	Session               *melody.Session
 	Room                  *Room
 	Hub                   *Hub
@@ -15,7 +16,7 @@ type SessionInfo struct {
 	IsHost                bool
 	ConnectionTimestampMS uint64
 	Stats                 Stats
-	UniqueId              string
+	UniqueID              string
 }
 
 type Stats struct {
@@ -46,6 +47,13 @@ func (s *SessionInfo) RecvPacket(msg []byte) {
 	}
 }
 
+func (s *SessionInfo) Close(code int, msg string) {
+	if s.Session != nil {
+		log.Printf("Sendind close session: %v, code: %v, msg:%v", s.UniqueID, code, msg)
+		s.Session.CloseWithMsg(melody.FormatCloseMessage(code, msg))
+	}
+}
+
 type UserPacket struct {
 	Msg      []byte
 	SessionI *SessionInfo
@@ -63,9 +71,9 @@ func buildMsgPacket(subcmd uint8, msgid uint8, msg string) []byte {
 	return b
 }
 
-func buildPlayerPacket(playerId uint8, state uint8, name string) []byte {
+func buildPlayerPacket(playerID uint8, state uint8, name string) []byte {
 	b := []byte{1, 3, 0, 0}
-	b[2] = playerId
+	b[2] = playerID
 	b[3] = state
 	if name != "" {
 		b = append(b, []byte(name)...)
